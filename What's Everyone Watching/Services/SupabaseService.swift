@@ -682,7 +682,9 @@ class SupabaseService: NSObject, ObservableObject {
             print("Response: \(responseBody)")
         }
 
-        guard statusCode == 201 else {
+        if statusCode == 201 || statusCode == 409 {
+            return
+        } else {
             throw NSError(domain: "API", code: -1, userInfo: [NSLocalizedDescriptionKey: "Insert failed with status \(statusCode)"])
         }
     }
