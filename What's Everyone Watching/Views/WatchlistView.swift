@@ -320,7 +320,8 @@ struct WatchlistView: View {
             } catch {
                 print("Error loading watchlist: \(error)")
                 DispatchQueue.main.async {
-                    self.errorMessage = "Failed to load watchlist: \(error.localizedDescription)"
+                    self.watchlistShows = []
+                    self.watchlistMovies = []
                     self.isLoading = false
                 }
             }
