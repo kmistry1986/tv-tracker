@@ -3,7 +3,8 @@ import SwiftUI
 struct HomeView: View {
     @StateObject private var supabase = SupabaseService.shared
     @StateObject private var tmdb = TMDBService.shared
-    @State private var popularShows: [SearchResult] = []
+    @State private var trendingShows: [SearchResult] = []
+    @State private var trendingMovies: [SearchResult] = []
     @State private var libraryCount = 0
     @State private var watchlistCount = 0
     @State private var ratedCount = 0
@@ -21,8 +22,12 @@ struct HomeView: View {
                         VStack(spacing: 24) {
                             quickActionsSection
                             
-                            if !popularShows.isEmpty {
-                                trendingSection
+                            if !trendingShows.isEmpty {
+                                trendingShowsSection
+                            }
+                            
+                            if !trendingMovies.isEmpty {
+                                trendingMoviesSection
                             }
                             
                             statsSection
@@ -33,7 +38,7 @@ struct HomeView: View {
             }
             .navigationTitle("TV Tracker")
             .onAppear {
-                loadPopularShows()
+                loadTrendingContent()
                 loadStats()
             }
         }
@@ -120,10 +125,10 @@ struct HomeView: View {
         }
     }
     
-    private var trendingSection: some View {
+    private var trendingShowsSection: some View {
         VStack(spacing: 12) {
             HStack {
-                Text("Trending Now")
+                Text("Trending TV Shows")
                     .font(.headline)
                 
                 Spacer()
@@ -137,30 +142,86 @@ struct HomeView: View {
             
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
-                    ForEach(popularShows.prefix(5), id: \.id) { show in
-                        NavigationLink(destination: SearchView()) {
-                            VStack(spacing: 8) {
-                                if let imageUrl = show.imageUrl, let url = URL(string: imageUrl) {
-                                    AsyncImage(url: url) { image in
-                                        image
-                                            .resizable()
-                                            .scaledToFill()
-                                    } placeholder: {
-                                        Color.gray
-                                    }
-                                    .frame(width: 100, height: 150)
-                                    .cornerRadius(8)
-                                } else {
-                                    Color.gray
+                    ForEach(trendingShows.prefix(10), id: \.id) { show in
+                        if let showId = show.id {
+                            NavigationLink(destination: TVShowDetailView(showId: showId)) {
+                                VStack(spacing: 8) {
+                                    if let imageUrl = show.imageUrl, let url = URL(string: imageUrl) {
+                                        AsyncImage(url: url) { image in
+                                            image
+                                                .resizable()
+                                                .scaledToFill()
+                                        } placeholder: {
+                                            Color.gray
+                                        }
                                         .frame(width: 100, height: 150)
                                         .cornerRadius(8)
+                                    } else {
+                                        Color.gray
+                                            .frame(width: 100, height: 150)
+                                            .cornerRadius(8)
+                                    }
+                                    
+                                    Text(show.displayTitle)
+                                        .font(.caption)
+                                        .lineLimit(2)
+                                        .multilineTextAlignment(.center)
+                                        .frame(width: 100)
                                 }
-                                
-                                Text(show.displayTitle)
-                                    .font(.caption)
-                                    .lineLimit(2)
-                                    .multilineTextAlignment(.center)
                             }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private var trendingMoviesSection: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Text("Trending Movies")
+                    .font(.headline)
+                
+                Spacer()
+                
+                NavigationLink(destination: SearchView()) {
+                    Text("See All")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                }
+            }
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(trendingMovies.prefix(10), id: \.id) { movie in
+                        if let movieId = movie.id {
+                            NavigationLink(destination: MovieDetailView(movieId: movieId)) {
+                                VStack(spacing: 8) {
+                                    if let imageUrl = movie.imageUrl, let url = URL(string: imageUrl) {
+                                        AsyncImage(url: url) { image in
+                                            image
+                                                .resizable()
+                                                .scaledToFill()
+                                        } placeholder: {
+                                            Color.gray
+                                        }
+                                        .frame(width: 100, height: 150)
+                                        .cornerRadius(8)
+                                    } else {
+                                        Color.gray
+                                            .frame(width: 100, height: 150)
+                                            .cornerRadius(8)
+                                    }
+                                    
+                                    Text(movie.displayTitle)
+                                        .font(.caption)
+                                        .lineLimit(2)
+                                        .multilineTextAlignment(.center)
+                                        .frame(width: 100)
+                                }
+                            }
+                            .buttonStyle(PlainButtonStyle())
                         }
                     }
                 }
@@ -182,14 +243,18 @@ struct HomeView: View {
         }
     }
     
-    private func loadPopularShows() {
+    private func loadTrendingContent() {
         isLoading = true
         Task {
             do {
-                let results = try await tmdb.searchMulti(query: "breaking bad")
-                self.popularShows = results.filter { $0.mediaType == "tv" }
+                // Load trending TV shows and movies concurrently
+                async let shows = tmdb.getTrendingTV(timeWindow: .week)
+                async let movies = tmdb.getTrendingMovies(timeWindow: .week)
+                
+                self.trendingShows = try await shows
+                self.trendingMovies = try await movies
             } catch {
-                print("Error loading popular shows: \(error)")
+                print("Error loading trending content: \(error)")
             }
             isLoading = false
         }

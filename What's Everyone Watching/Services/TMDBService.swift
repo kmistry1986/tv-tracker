@@ -12,6 +12,30 @@ class TMDBService: NSObject, ObservableObject {
         super.init()
     }
     
+    // MARK: - Trending
+    
+    func getTrendingTV(timeWindow: TrendingTimeWindow = .week) async throws -> [SearchResult] {
+        let endpoint = "\(baseURL)/trending/tv/\(timeWindow.rawValue)"
+        var components = URLComponents(string: endpoint)!
+        components.queryItems = [
+            URLQueryItem(name: "api_key", value: apiKey)
+        ]
+        
+        let response: MultiSearchResponse = try await fetch(url: components.url!)
+        return response.results
+    }
+    
+    func getTrendingMovies(timeWindow: TrendingTimeWindow = .week) async throws -> [SearchResult] {
+        let endpoint = "\(baseURL)/trending/movie/\(timeWindow.rawValue)"
+        var components = URLComponents(string: endpoint)!
+        components.queryItems = [
+            URLQueryItem(name: "api_key", value: apiKey)
+        ]
+        
+        let response: MultiSearchResponse = try await fetch(url: components.url!)
+        return response.results
+    }
+    
     // MARK: - Search
     
     func searchMulti(query: String) async throws -> [SearchResult] {
@@ -48,6 +72,30 @@ class TMDBService: NSObject, ObservableObject {
         
         let response: MovieSearchResponse = try await fetch(url: components.url!)
         return response.results
+    }
+    
+    // MARK: - Watch Providers
+    
+    func getTVWatchProviders(tvId: Int, region: String = "US") async throws -> WatchProvidersResult? {
+        let endpoint = "\(baseURL)/tv/\(tvId)/watch/providers"
+        var components = URLComponents(string: endpoint)!
+        components.queryItems = [
+            URLQueryItem(name: "api_key", value: apiKey)
+        ]
+        
+        let response: WatchProvidersResponse = try await fetch(url: components.url!)
+        return response.results[region]
+    }
+    
+    func getMovieWatchProviders(movieId: Int, region: String = "US") async throws -> WatchProvidersResult? {
+        let endpoint = "\(baseURL)/movie/\(movieId)/watch/providers"
+        var components = URLComponents(string: endpoint)!
+        components.queryItems = [
+            URLQueryItem(name: "api_key", value: apiKey)
+        ]
+        
+        let response: WatchProvidersResponse = try await fetch(url: components.url!)
+        return response.results[region]
     }
     
     // MARK: - Details
@@ -92,6 +140,13 @@ class TMDBService: NSObject, ObservableObject {
         
         return try JSONDecoder().decode(T.self, from: data)
     }
+}
+
+// MARK: - Enums
+
+enum TrendingTimeWindow: String {
+    case day
+    case week
 }
 
 // MARK: - Response Models
@@ -259,5 +314,66 @@ struct MovieDetail: Decodable {
         case overview
         case posterPath = "poster_path"
         case releaseDate = "release_date"
+    }
+}
+
+// MARK: - Watch Providers Models
+
+struct WatchProvidersResponse: Decodable {
+    let results: [String: WatchProvidersResult]
+}
+
+struct WatchProvidersResult: Decodable {
+    let link: String?
+    let flatrate: [WatchProvider]?  // Streaming (subscription)
+    let buy: [WatchProvider]?        // Purchase
+    let rent: [WatchProvider]?       // Rental
+    let free: [WatchProvider]?       // Free with ads
+    
+    // Helper to get all available providers
+    var allProviders: [WatchProvider] {
+        var providers: [WatchProvider] = []
+        if let flatrate = flatrate { providers.append(contentsOf: flatrate) }
+        if let free = free { providers.append(contentsOf: free) }
+        if let buy = buy { providers.append(contentsOf: buy) }
+        if let rent = rent { providers.append(contentsOf: rent) }
+        
+        // Remove duplicates based on provider_id
+        let uniqueProviders = Dictionary(grouping: providers, by: { $0.providerId })
+            .compactMap { $0.value.first }
+        return uniqueProviders
+    }
+    
+    // Primary streaming services (subscription-based)
+    var streamingProviders: [WatchProvider] {
+        (flatrate ?? []) + (free ?? [])
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case link
+        case flatrate
+        case buy
+        case rent
+        case free
+    }
+}
+
+struct WatchProvider: Identifiable, Decodable {
+    let providerId: Int
+    let providerName: String
+    let logoPath: String
+    let displayPriority: Int
+    
+    var id: Int { providerId }
+    
+    var logoUrl: String {
+        "\(TMDBService.shared.imageBaseURL)\(logoPath)"
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case providerId = "provider_id"
+        case providerName = "provider_name"
+        case logoPath = "logo_path"
+        case displayPriority = "display_priority"
     }
 }
