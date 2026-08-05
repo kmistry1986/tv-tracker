@@ -4,6 +4,7 @@ struct ProfileSetupView: View {
     @StateObject private var supabase = SupabaseService.shared
     @State private var displayName = ""
     @State private var bio = ""
+    @State private var selectedPlatformIds: [Int] = []
     @State private var isLoading = false
     @State private var error: String?
 
@@ -17,96 +18,102 @@ struct ProfileSetupView: View {
                 )
                 .ignoresSafeArea()
 
-                VStack(spacing: 0) {
-                    VStack(spacing: 12) {
-                        Image(systemName: "person.crop.circle.fill.badge.plus")
-                            .font(.system(size: 40))
-                            .foregroundColor(.blue)
+                ScrollView {
+                    VStack(spacing: 0) {
+                        VStack(spacing: 12) {
+                            Image(systemName: "person.crop.circle.fill.badge.plus")
+                                .font(.system(size: 40))
+                                .foregroundColor(.blue)
 
-                        Text("Complete Your Profile")
-                            .font(.system(size: 22, weight: .bold))
+                            Text("Complete Your Profile")
+                                .font(.system(size: 22, weight: .bold))
 
-                        Text("Set up your public profile so friends can find you")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding(.top, 32)
-                    .padding(.bottom, 28)
-
-                    VStack(spacing: 16) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Display Name")
+                            Text("Set up your public profile so friends can find you")
                                 .font(.caption)
-                                .fontWeight(.semibold)
                                 .foregroundColor(.gray)
-
-                            HStack(spacing: 12) {
-                                Image(systemName: "person.fill")
-                                    .foregroundColor(.blue)
-                                    .frame(width: 20)
-
-                                TextField("How should friends know you?", text: $displayName)
-                                    .autocapitalization(.words)
-                            }
-                            .padding(12)
-                            .background(Color(.systemGray6))
-                            .cornerRadius(10)
+                                .multilineTextAlignment(.center)
                         }
+                        .padding(.top, 32)
+                        .padding(.bottom, 28)
 
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Bio (optional)")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.gray)
+                        VStack(spacing: 24) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Display Name")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.gray)
 
-                            HStack(spacing: 12) {
-                                VStack(alignment: .leading) {
-                                    TextEditor(text: $bio)
-                                        .frame(height: 100)
+                                HStack(spacing: 12) {
+                                    Image(systemName: "person.fill")
+                                        .foregroundColor(.blue)
+                                        .frame(width: 20)
+
+                                    TextField("How should friends know you?", text: $displayName)
+                                        .autocapitalization(.words)
                                 }
                                 .padding(12)
                                 .background(Color(.systemGray6))
                                 .cornerRadius(10)
                             }
-                        }
-                    }
-                    .padding(.horizontal, 0)
 
-                    Spacer()
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Bio (optional)")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.gray)
 
-                    if let error = error {
-                        HStack(spacing: 8) {
-                            Image(systemName: "exclamationmark.circle.fill")
-                                .foregroundColor(.red)
-                            Text(error)
-                                .font(.caption)
-                                .foregroundColor(.red)
-                        }
-                        .padding(12)
-                        .background(Color.red.opacity(0.1))
-                        .cornerRadius(8)
-                        .padding(.bottom, 16)
-                    }
-
-                    Button(action: completeSetup) {
-                        HStack(spacing: 8) {
-                            if isLoading {
-                                ProgressView()
-                                    .tint(.white)
+                                HStack(spacing: 12) {
+                                    VStack(alignment: .leading) {
+                                        TextEditor(text: $bio)
+                                            .frame(height: 100)
+                                    }
+                                    .padding(12)
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(10)
+                                }
                             }
-                            Text("Continue")
-                                .fontWeight(.semibold)
+                            
+                            // Streaming Platforms
+                            StreamingPlatformSelector(selectedPlatformIds: $selectedPlatformIds)
                         }
+                        .padding(.horizontal, 0)
+
+                        Spacer()
+
+                        if let error = error {
+                            HStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.circle.fill")
+                                    .foregroundColor(.red)
+                                Text(error)
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                            }
+                            .padding(12)
+                            .background(Color.red.opacity(0.1))
+                            .cornerRadius(8)
+                            .padding(.top, 16)
+                        }
+
+                        Button(action: completeSetup) {
+                            HStack(spacing: 8) {
+                                if isLoading {
+                                    ProgressView()
+                                        .tint(.white)
+                                }
+                                Text("Continue")
+                                    .fontWeight(.semibold)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(displayName.trimmingCharacters(in: .whitespaces).isEmpty ? Color.gray : Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                        .disabled(isLoading || displayName.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .padding(.top, 24)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(displayName.trimmingCharacters(in: .whitespaces).isEmpty ? Color.gray : Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
-                    .disabled(isLoading || displayName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .padding(24)
                 }
-                .padding(24)
             }
         }
     }
@@ -125,6 +132,11 @@ struct ProfileSetupView: View {
                     displayName: displayName,
                     bio: bio.trimmingCharacters(in: .whitespaces).isEmpty ? nil : bio
                 )
+                
+                // Save streaming platforms
+                if !selectedPlatformIds.isEmpty {
+                    try await supabase.saveUserPlatforms(userId: userId, platformIds: selectedPlatformIds)
+                }
             } catch {
                 self.error = error.localizedDescription
             }

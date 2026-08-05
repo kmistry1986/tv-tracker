@@ -9,6 +9,23 @@ struct LibraryView: View {
     @State private var selectedTab = 0
     @State private var errorMessage: String?
     @State private var lastRefreshTime = Date()
+    @State private var searchText = ""
+    @State private var showAllShows = false
+    @State private var showAllMovies = false
+    
+    var filteredShows: [LibraryShowWithDetails] {
+        if searchText.isEmpty {
+            return showAllShows ? libraryShows : Array(libraryShows.prefix(10))
+        }
+        return libraryShows.filter { $0.showTitle.localizedCaseInsensitiveContains(searchText) }
+    }
+    
+    var filteredMovies: [LibraryMovieWithDetails] {
+        if searchText.isEmpty {
+            return showAllMovies ? libraryMovies : Array(libraryMovies.prefix(10))
+        }
+        return libraryMovies.filter { $0.movieTitle.localizedCaseInsensitiveContains(searchText) }
+    }
     
     var body: some View {
         NavigationStack {
@@ -19,6 +36,26 @@ struct LibraryView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding()
+                
+                // Search bar
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.gray)
+                    TextField("Search library...", text: $searchText)
+                        .textFieldStyle(PlainTextFieldStyle())
+                    
+                    if !searchText.isEmpty {
+                        Button(action: { searchText = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.gray)
+                        }
+                    }
+                }
+                .padding(8)
+                .background(Color(.systemGray6))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                .padding(.bottom, 8)
                 
                 if let errorMessage = errorMessage {
                     VStack(spacing: 12) {
@@ -62,6 +99,9 @@ struct LibraryView: View {
                 loadLibrary()
             }
             .onChange(of: selectedTab) { _ in
+                searchText = ""
+                showAllShows = false
+                showAllMovies = false
                 loadLibrary()
             }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
@@ -72,7 +112,18 @@ struct LibraryView: View {
     
     private var showsList: some View {
         Group {
-            if libraryShows.isEmpty {
+            if filteredShows.isEmpty && !searchText.isEmpty {
+                VStack {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 50))
+                        .foregroundColor(.gray)
+                        .padding()
+                    Text("No shows found")
+                        .foregroundColor(.gray)
+                    Spacer()
+                }
+                .padding(.top, 50)
+            } else if libraryShows.isEmpty {
                 VStack {
                     Text("No shows watched yet")
                         .foregroundColor(.gray)
@@ -80,82 +131,97 @@ struct LibraryView: View {
                 }
                 .padding()
             } else {
-                List {
-                    ForEach(libraryShows, id: \.id) { show in
-                        NavigationLink(destination: ShowDetailView(showId: show.showId, showTitle: show.showTitle)) {
-                            HStack(spacing: 12) {
-                                if let imageUrl = show.posterUrl, let url = URL(string: imageUrl) {
-                                    AsyncImage(url: url) { image in
-                                        image
-                                            .resizable()
-                                            .scaledToFill()
-                                    } placeholder: {
-                                        Color.gray
-                                    }
-                                    .frame(width: 50, height: 75)
-                                    .cornerRadius(4)
-                                } else {
-                                    Color.gray
+                VStack(spacing: 0) {
+                    List {
+                        ForEach(filteredShows, id: \.id) { show in
+                            NavigationLink(destination: ShowDetailView(showId: show.showId, showTitle: show.showTitle)) {
+                                HStack(spacing: 12) {
+                                    if let imageUrl = show.posterUrl, let url = URL(string: imageUrl) {
+                                        AsyncImage(url: url) { image in
+                                            image
+                                                .resizable()
+                                                .scaledToFill()
+                                        } placeholder: {
+                                            Color.gray
+                                        }
                                         .frame(width: 50, height: 75)
                                         .cornerRadius(4)
-                                }
-
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(show.showTitle)
-                                        .fontWeight(.semibold)
-                                        .foregroundColor(.primary)
-
-                                    if let rating = show.rating {
-                                        Text("\(String(repeating: "★", count: rating))\(String(repeating: "☆", count: 10 - rating)) \(rating)/10")
-                                            .font(.caption)
-                                            .foregroundColor(.orange)
+                                    } else {
+                                        Color.gray
+                                            .frame(width: 50, height: 75)
+                                            .cornerRadius(4)
                                     }
 
-                                    Text(formatDate(show.watchedDate))
-                                        .font(.caption)
-                                        .foregroundColor(.gray)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(show.showTitle)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.primary)
 
-                                    if let review = show.review, !review.isEmpty {
-                                        Text(review)
+                                        if let rating = show.rating {
+                                            Text("\(String(repeating: "★", count: rating))\(String(repeating: "☆", count: 10 - rating)) \(rating)/10")
+                                                .font(.caption)
+                                                .foregroundColor(.orange)
+                                        }
+
+                                        Text(formatDate(show.watchedDate))
                                             .font(.caption)
                                             .foregroundColor(.gray)
-                                            .lineLimit(2)
-                                    }
-                                }
 
-                                VStack(alignment: .trailing, spacing: 4) {
-                                    if show.watchedEpisodes == show.totalEpisodes {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .font(.system(size: 16))
-                                            .foregroundColor(.green)
-                                    } else if let lastEpisode = show.lastWatchedEpisode {
-                                        Text(lastEpisode)
+                                        if let review = show.review, !review.isEmpty {
+                                            Text(review)
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
+                                                .lineLimit(2)
+                                        }
+                                    }
+
+                                    VStack(alignment: .trailing, spacing: 4) {
+                                        if show.watchedEpisodes == show.totalEpisodes {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .font(.system(size: 16))
+                                                .foregroundColor(.green)
+                                        } else if let lastEpisode = show.lastWatchedEpisode {
+                                            Text(lastEpisode)
+                                                .font(.caption)
+                                                .fontWeight(.semibold)
+                                                .foregroundColor(.blue)
+                                        }
+
+                                        Text("\(show.watchedEpisodes)/\(show.totalEpisodes) episodes")
                                             .font(.caption)
-                                            .fontWeight(.semibold)
-                                            .foregroundColor(.blue)
+                                            .foregroundColor(.gray)
                                     }
-
-                                    Text("\(show.watchedEpisodes)/\(show.totalEpisodes) episodes")
-                                        .font(.caption)
-                                        .foregroundColor(.gray)
+                                }
+                                .padding(.vertical, 4)
+                            }
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    removeShow(id: show.id)
+                                } label: {
+                                    Label("Remove", systemImage: "trash")
                                 }
                             }
-                            .padding(.vertical, 4)
-                        }
-                        .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) {
-                                removeShow(id: show.id)
-                            } label: {
-                                Label("Remove", systemImage: "trash")
+                            .swipeActions(edge: .leading) {
+                                Button {
+                                    markShowAsWatched(showId: show.showId)
+                                } label: {
+                                    Label("Watched", systemImage: "checkmark.circle.fill")
+                                }
+                                .tint(.green)
                             }
                         }
-                        .swipeActions(edge: .leading) {
-                            Button {
-                                markShowAsWatched(showId: show.showId)
-                            } label: {
-                                Label("Watched", systemImage: "checkmark.circle.fill")
+                        
+                        // "See All" button
+                        if !showAllShows && libraryShows.count > 10 && searchText.isEmpty {
+                            Button(action: { showAllShows = true }) {
+                                HStack {
+                                    Spacer()
+                                    Text("See All (\(libraryShows.count) shows)")
+                                        .foregroundColor(.blue)
+                                    Spacer()
+                                }
+                                .padding(.vertical, 8)
                             }
-                            .tint(.green)
                         }
                     }
                 }
@@ -165,7 +231,18 @@ struct LibraryView: View {
     
     private var moviesList: some View {
         Group {
-            if libraryMovies.isEmpty {
+            if filteredMovies.isEmpty && !searchText.isEmpty {
+                VStack {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 50))
+                        .foregroundColor(.gray)
+                        .padding()
+                    Text("No movies found")
+                        .foregroundColor(.gray)
+                    Spacer()
+                }
+                .padding(.top, 50)
+            } else if libraryMovies.isEmpty {
                 VStack {
                     Text("No movies watched yet")
                         .foregroundColor(.gray)
@@ -174,7 +251,7 @@ struct LibraryView: View {
                 .padding()
             } else {
                 List {
-                    ForEach(libraryMovies, id: \.id) { movie in
+                    ForEach(filteredMovies, id: \.id) { movie in
                         HStack(spacing: 12) {
                             if let imageUrl = movie.posterUrl, let url = URL(string: imageUrl) {
                                 AsyncImage(url: url) { image in
@@ -228,6 +305,19 @@ struct LibraryView: View {
                             } label: {
                                 Label("Remove", systemImage: "trash")
                             }
+                        }
+                    }
+                    
+                    // "See All" button
+                    if !showAllMovies && libraryMovies.count > 10 && searchText.isEmpty {
+                        Button(action: { showAllMovies = true }) {
+                            HStack {
+                                Spacer()
+                                Text("See All (\(libraryMovies.count) movies)")
+                                    .foregroundColor(.blue)
+                                Spacer()
+                            }
+                            .padding(.vertical, 8)
                         }
                     }
                 }

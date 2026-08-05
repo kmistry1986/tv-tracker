@@ -6,8 +6,15 @@
 	objectVersion = 90;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		552DC89F3023E326003AB9F6 /* StreamingPlatformSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 552DC89E3023E326003AB9F6 /* StreamingPlatformSelector.swift */; };
+		552DC8A13023E355003AB9F6 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 552DC8A03023E355003AB9F6 /* SettingsView.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		000000000000000000000120 /* What's Everyone Watching.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "What's Everyone Watching.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		552DC89E3023E326003AB9F6 /* StreamingPlatformSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingPlatformSelector.swift; sourceTree = "<group>"; };
+		552DC8A03023E355003AB9F6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -32,6 +39,8 @@
 			children = (
 				000000000000000000000010 /* What's Everyone Watching */,
 				000000000000000000000020 /* Products */,
+				552DC89E3023E326003AB9F6 /* StreamingPlatformSelector.swift */,
+				552DC8A03023E355003AB9F6 /* SettingsView.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -110,6 +119,8 @@
 		000000000000000120000000 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			files = (
+				552DC8A13023E355003AB9F6 /* SettingsView.swift in Sources */,
+				552DC89F3023E326003AB9F6 /* StreamingPlatformSelector.swift in Sources */,
 			);
 		};
 /* End PBXSourcesBuildPhase section */

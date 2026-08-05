@@ -66,8 +66,7 @@ struct MainTabView: View {
 
 struct ProfileView: View {
     @StateObject private var supabase = SupabaseService.shared
-    @State private var selectedPlatforms: Set<String> = []
-    let streamingPlatforms = ["Netflix", "Disney+", "Hulu", "Prime Video", "HBO Max", "Apple TV+", "Paramount+"]
+    @State private var showSettings = false
 
     var body: some View {
         NavigationStack {
@@ -89,64 +88,18 @@ struct ProfileView: View {
 
                 Divider()
 
-                ScrollView {
-                    VStack(spacing: 0) {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("My Streaming Platforms")
-                                .font(.headline)
-                                .padding(.horizontal)
-                                .padding(.top)
+                List {
+                    NavigationLink(destination: FriendsView()) {
+                        Label("Friends", systemImage: "person.2")
+                    }
 
-                            VStack(spacing: 8) {
-                                ForEach(streamingPlatforms, id: \.self) { platform in
-                                    HStack {
-                                        Image(systemName: selectedPlatforms.contains(platform) ? "checkmark.circle.fill" : "circle")
-                                            .foregroundColor(selectedPlatforms.contains(platform) ? .blue : .gray)
-
-                                        Text(platform)
-                                            .foregroundColor(.primary)
-
-                                        Spacer()
-                                    }
-                                    .padding(.horizontal)
-                                    .padding(.vertical, 8)
-                                    .onTapGesture {
-                                        if selectedPlatforms.contains(platform) {
-                                            selectedPlatforms.remove(platform)
-                                        } else {
-                                            selectedPlatforms.insert(platform)
-                                        }
-                                    }
-                                }
-                            }
-                            .padding(.bottom)
-                        }
-
-                        Divider()
-
-                        NavigationLink(destination: FriendsView()) {
-                            HStack {
-                                Image(systemName: "person.2")
-                                Text("Friends")
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                            }
-                            .padding()
+                    Button(action: { showSettings = true }) {
+                        Label("Streaming Platforms", systemImage: "play.tv")
                             .foregroundColor(.primary)
-                        }
-
-                        Divider()
-
-                        NavigationLink(destination: EmptyView()) {
-                            HStack {
-                                Image(systemName: "gear")
-                                Text("Settings")
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                            }
-                            .padding()
-                            .foregroundColor(.primary)
-                        }
+                    }
+                    
+                    NavigationLink(destination: EmptyView()) {
+                        Label("Settings", systemImage: "gear")
                     }
                 }
 
@@ -163,6 +116,9 @@ struct ProfileView: View {
                 .padding()
             }
             .navigationTitle("Profile")
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
+            }
         }
     }
 

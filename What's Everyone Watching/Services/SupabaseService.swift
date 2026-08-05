@@ -14,8 +14,10 @@ class SupabaseService: NSObject, ObservableObject {
 
     private let userDefaultsKey = "savedUser"
     private let tokenDefaultsKey = "authToken"
+    private let refreshTokenDefaultsKey = "refreshToken"
     private let profileSetupKey = "profileSetupNeeded"
     private var authToken: String = ""
+    private var refreshToken: String = ""
     
     override private init() {
         super.init()
@@ -32,6 +34,10 @@ class SupabaseService: NSObject, ObservableObject {
                 self.authToken = token
                 print("Restored auth token")
             }
+            if let refToken = UserDefaults.standard.string(forKey: refreshTokenDefaultsKey) {
+                self.refreshToken = refToken
+                print("Restored refresh token")
+            }
             let needsSetup = UserDefaults.standard.bool(forKey: profileSetupKey)
             DispatchQueue.main.async {
                 self.currentUser = user
@@ -41,13 +47,15 @@ class SupabaseService: NSObject, ObservableObject {
         }
     }
     
-    private func saveSession(user: User, token: String) {
+    private func saveSession(user: User, token: String, refreshToken: String = "") {
         print("Saving user to session: id='\(user.id)', email='\(user.email)'")
         if let encoded = try? JSONEncoder().encode(user) {
             UserDefaults.standard.set(encoded, forKey: userDefaultsKey)
         }
         UserDefaults.standard.set(token, forKey: tokenDefaultsKey)
+        UserDefaults.standard.set(refreshToken, forKey: refreshTokenDefaultsKey)
         self.authToken = token
+        self.refreshToken = refreshToken
     }
 
     private func setProfileSetupNeeded(_ needed: Bool) {
@@ -60,7 +68,9 @@ class SupabaseService: NSObject, ObservableObject {
     private func clearSession() {
         UserDefaults.standard.removeObject(forKey: userDefaultsKey)
         UserDefaults.standard.removeObject(forKey: tokenDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: refreshTokenDefaultsKey)
         self.authToken = ""
+        self.refreshToken = ""
     }
     
     // MARK: - Authentication
@@ -138,6 +148,7 @@ class SupabaseService: NSObject, ObservableObject {
         struct TokenResponse: Decodable {
             let user: UserResponse?
             let access_token: String?
+            let refresh_token: String?
         }
         
         struct UserResponse: Decodable {
@@ -149,6 +160,7 @@ class SupabaseService: NSObject, ObservableObject {
         let userId = tokenResponse.user?.id ?? UUID().uuidString
         let userEmail = tokenResponse.user?.email ?? email
         let token = tokenResponse.access_token ?? ""
+        let refToken = tokenResponse.refresh_token ?? ""
         print("SignIn userId: \(userId), email: \(userEmail), token: \(token.prefix(20))...")
         
         let user = User(id: userId, email: userEmail, name: "", avatarUrl: nil)
@@ -159,7 +171,7 @@ class SupabaseService: NSObject, ObservableObject {
         DispatchQueue.main.async {
             self.currentUser = user
             self.isLoggedIn = true
-            self.saveSession(user: user, token: token)
+            self.saveSession(user: user, token: token, refreshToken: refToken)
         }
         
         return user
@@ -170,6 +182,53 @@ class SupabaseService: NSObject, ObservableObject {
             self.currentUser = nil
             self.isLoggedIn = false
             self.clearSession()
+        }
+    }
+    
+    // MARK: - Token Refresh
+    
+    private func refreshAccessToken() async throws {
+        guard !refreshToken.isEmpty else {
+            throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "No refresh token available"])
+        }
+        
+        let endpoint = "\(supabaseURL)/auth/v1/token?grant_type=refresh_token"
+        
+        var request = URLRequest(url: URL(string: endpoint)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        
+        struct RefreshBody: Encodable {
+            let refresh_token: String
+        }
+        
+        let body = RefreshBody(refresh_token: refreshToken)
+        request.httpBody = try JSONEncoder().encode(body)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            print("❌ Token refresh failed")
+            throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Token refresh failed"])
+        }
+        
+        struct TokenResponse: Decodable {
+            let access_token: String?
+            let refresh_token: String?
+        }
+        
+        let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: data)
+        let newToken = tokenResponse.access_token ?? ""
+        let newRefreshToken = tokenResponse.refresh_token ?? refreshToken
+        
+        print("✅ Token refreshed successfully")
+        
+        self.authToken = newToken
+        self.refreshToken = newRefreshToken
+        
+        // Update saved session
+        if let user = currentUser {
+            saveSession(user: user, token: newToken, refreshToken: newRefreshToken)
         }
     }
     
@@ -591,6 +650,47 @@ class SupabaseService: NSObject, ObservableObject {
         setProfileSetupNeeded(false)
     }
 
+    // MARK: - Streaming Platforms
+    
+    func saveUserPlatforms(userId: String, platformIds: [Int]) async throws {
+        // First, delete existing platforms for this user
+        let deleteEndpoint = "\(supabaseURL)/rest/v1/user_streaming_platforms?user_id=eq.\(userId)"
+        var deleteRequest = URLRequest(url: URL(string: deleteEndpoint)!)
+        deleteRequest.httpMethod = "DELETE"
+        deleteRequest.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        if !authToken.isEmpty {
+            deleteRequest.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
+        
+        _ = try await URLSession.shared.data(for: deleteRequest)
+        
+        // Now insert the new platforms
+        if !platformIds.isEmpty {
+            let endpoint = "\(supabaseURL)/rest/v1/user_streaming_platforms"
+            
+            struct PlatformInsert: Encodable {
+                let user_id: String
+                let platform_id: Int
+            }
+            
+            for platformId in platformIds {
+                let body = PlatformInsert(user_id: userId, platform_id: platformId)
+                try await insert(endpoint: endpoint, body: body)
+            }
+        }
+    }
+    
+    func getUserPlatforms(userId: String) async throws -> [Int] {
+        let endpoint = "\(supabaseURL)/rest/v1/user_streaming_platforms?user_id=eq.\(userId)&select=platform_id"
+        
+        struct PlatformResult: Decodable {
+            let platform_id: Int
+        }
+        
+        let results: [PlatformResult] = try await fetch(endpoint: endpoint)
+        return results.map { $0.platform_id }
+    }
+
     func updateUserProfile(userId: String, displayName: String? = nil, bio: String? = nil, isPublic: Bool? = nil) async throws {
         let endpoint = "\(supabaseURL)/rest/v1/user_profiles?user_id=eq.\(userId)"
 
@@ -639,6 +739,20 @@ class SupabaseService: NSObject, ObservableObject {
     // MARK: - Private Helpers
     
     private func fetch<T: Decodable>(endpoint: String) async throws -> [T] {
+        // Try the request with current token
+        do {
+            return try await performFetch(endpoint: endpoint)
+        } catch let error as NSError where error.code == 401 {
+            // Token expired, try to refresh
+            print("🔄 Token expired, attempting refresh...")
+            try await refreshAccessToken()
+            
+            // Retry with new token
+            return try await performFetch(endpoint: endpoint)
+        }
+    }
+    
+    private func performFetch<T: Decodable>(endpoint: String) async throws -> [T] {
         var request = URLRequest(url: URL(string: endpoint)!)
         request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -647,8 +761,20 @@ class SupabaseService: NSObject, ObservableObject {
         }
         
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-            throw NSError(domain: "API", code: -1, userInfo: [NSLocalizedDescriptionKey: "Request failed"])
+        
+        let httpResponse = response as? HTTPURLResponse
+        let statusCode = httpResponse?.statusCode ?? -1
+        
+        guard statusCode == 200 else {
+            let responseBody = String(data: data, encoding: .utf8) ?? "No response body"
+            print("❌ API Error:")
+            print("   Endpoint: \(endpoint)")
+            print("   Status Code: \(statusCode)")
+            print("   Response: \(responseBody)")
+            throw NSError(domain: "API", code: statusCode, userInfo: [
+                NSLocalizedDescriptionKey: "Request failed with status \(statusCode)",
+                NSLocalizedFailureReasonErrorKey: responseBody
+            ])
         }
         
         return try JSONDecoder().decode([T].self, from: data)
