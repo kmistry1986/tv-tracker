@@ -9,118 +9,33 @@ struct HomeView: View {
     @State private var watchlistCount = 0
     @State private var ratedCount = 0
     @State private var isLoading = false
-    
+
     var body: some View {
         NavigationStack {
             ZStack {
                 Color(.systemBackground).ignoresSafeArea()
-                
-                VStack(spacing: 0) {
-                    headerSection
-                    
-                    ScrollView {
-                        VStack(spacing: 24) {
-                            quickActionsSection
-                            
-                            if !trendingShows.isEmpty {
-                                trendingShowsSection
-                            }
-                            
-                            if !trendingMovies.isEmpty {
-                                trendingMoviesSection
-                            }
-                            
-                            statsSection
+
+                ScrollView {
+                    VStack(spacing: 24) {
+                        if !trendingShows.isEmpty {
+                            trendingShowsSection
                         }
-                        .padding()
+
+                        if !trendingMovies.isEmpty {
+                            trendingMoviesSection
+                        }
+
+                        statsSection
                     }
+                    .padding()
+                    .padding(.top, 8)
                 }
             }
             .navigationTitle("TV Tracker")
+            .navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 loadTrendingContent()
                 loadStats()
-            }
-        }
-    }
-    
-    private var headerSection: some View {
-        VStack(spacing: 8) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Welcome back!")
-                        .font(.headline)
-                        .foregroundColor(.gray)
-                    
-                    Text(supabase.currentUser?.name ?? "User")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                }
-                
-                Spacer()
-                
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.system(size: 40))
-                    .foregroundColor(.blue)
-            }
-            .padding()
-        }
-        .background(Color(.systemGray6))
-    }
-    
-    private var quickActionsSection: some View {
-        VStack(spacing: 12) {
-            Text("Quick Actions")
-                .font(.headline)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            
-            NavigationLink(destination: SearchView()) {
-                HStack(spacing: 12) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 20))
-                        .foregroundColor(.white)
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Search Shows & Movies")
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white)
-                        Text("Find new content to watch")
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.85))
-                    }
-                    
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .foregroundColor(.white.opacity(0.7))
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .background(Color.blue)
-                .cornerRadius(12)
-            }
-            NavigationLink(destination: WatchlistView()) {
-                HStack(spacing: 12) {
-                    Image(systemName: "bookmark.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(.white)
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("View Watchlist")
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white)
-                        Text("See what you want to watch")
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.85))
-                    }
-                    
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .foregroundColor(.white.opacity(0.7))
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .background(Color.green)
-                .cornerRadius(12)
             }
         }
     }

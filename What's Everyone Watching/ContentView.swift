@@ -66,7 +66,9 @@ struct MainTabView: View {
 
 struct ProfileView: View {
     @StateObject private var supabase = SupabaseService.shared
-    
+    @State private var selectedPlatforms: Set<String> = []
+    let streamingPlatforms = ["Netflix", "Disney+", "Hulu", "Prime Video", "HBO Max", "Apple TV+", "Paramount+"]
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -74,21 +76,54 @@ struct ProfileView: View {
                     Image(systemName: "person.crop.circle.fill")
                         .font(.system(size: 80))
                         .foregroundColor(.blue)
-                    
+
                     Text(supabase.currentUser?.name ?? "User")
                         .font(.title2)
                         .fontWeight(.bold)
-                    
+
                     Text(supabase.currentUser?.email ?? "")
                         .font(.caption)
                         .foregroundColor(.gray)
                 }
                 .padding()
-                
+
                 Divider()
-                
+
                 ScrollView {
                     VStack(spacing: 0) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("My Streaming Platforms")
+                                .font(.headline)
+                                .padding(.horizontal)
+                                .padding(.top)
+
+                            VStack(spacing: 8) {
+                                ForEach(streamingPlatforms, id: \.self) { platform in
+                                    HStack {
+                                        Image(systemName: selectedPlatforms.contains(platform) ? "checkmark.circle.fill" : "circle")
+                                            .foregroundColor(selectedPlatforms.contains(platform) ? .blue : .gray)
+
+                                        Text(platform)
+                                            .foregroundColor(.primary)
+
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal)
+                                    .padding(.vertical, 8)
+                                    .onTapGesture {
+                                        if selectedPlatforms.contains(platform) {
+                                            selectedPlatforms.remove(platform)
+                                        } else {
+                                            selectedPlatforms.insert(platform)
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(.bottom)
+                        }
+
+                        Divider()
+
                         NavigationLink(destination: FriendsView()) {
                             HStack {
                                 Image(systemName: "person.2")
@@ -114,9 +149,9 @@ struct ProfileView: View {
                         }
                     }
                 }
-                
+
                 Spacer()
-                
+
                 Button(action: signOut) {
                     Text("Sign Out")
                         .frame(maxWidth: .infinity)
@@ -130,7 +165,7 @@ struct ProfileView: View {
             .navigationTitle("Profile")
         }
     }
-    
+
     private func signOut() {
         supabase.signOut()
     }

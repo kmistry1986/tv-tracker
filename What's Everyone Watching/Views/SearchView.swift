@@ -142,6 +142,8 @@ struct SearchDetailView: View {
     @State private var showWatchlistOptions = false
     @State private var selectedPriority = "medium"
     @State private var watchlistNotes = ""
+    @State private var watchProviders: WatchProvidersResult?
+    @State private var isLoadingProviders = false
     @Environment(\.dismiss) var dismiss
     
     var body: some View {
@@ -175,11 +177,11 @@ struct SearchDetailView: View {
                             Text(result.displayTitle)
                                 .font(.title2)
                                 .fontWeight(.bold)
-                            
+
                             Text(result.mediaType.uppercased())
                                 .font(.caption)
                                 .foregroundColor(.blue)
-                            
+
                             if let overview = result.overview {
                                 Text(overview)
                                     .font(.body)
@@ -188,6 +190,72 @@ struct SearchDetailView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
+
+                        if let watchProviders = watchProviders {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Watch Providers")
+                                    .font(.headline)
+
+                                if let streamingProviders = watchProviders.flatrate, !streamingProviders.isEmpty {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Stream")
+                                            .font(.caption)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.gray)
+
+                                        HStack(spacing: 8) {
+                                            ForEach(streamingProviders) { provider in
+                                                Text(provider.providerName)
+                                                    .font(.caption)
+                                                    .padding(6)
+                                                    .background(Color.blue.opacity(0.2))
+                                                    .cornerRadius(4)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if let rentProviders = watchProviders.rent, !rentProviders.isEmpty {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Rent")
+                                            .font(.caption)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.gray)
+
+                                        HStack(spacing: 8) {
+                                            ForEach(rentProviders) { provider in
+                                                Text(provider.providerName)
+                                                    .font(.caption)
+                                                    .padding(6)
+                                                    .background(Color.green.opacity(0.2))
+                                                    .cornerRadius(4)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if let buyProviders = watchProviders.buy, !buyProviders.isEmpty {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Buy")
+                                            .font(.caption)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.gray)
+
+                                        HStack(spacing: 8) {
+                                            ForEach(buyProviders) { provider in
+                                                Text(provider.providerName)
+                                                    .font(.caption)
+                                                    .padding(6)
+                                                    .background(Color.orange.opacity(0.2))
+                                                    .cornerRadius(4)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding()
+                        }
                         
                         VStack(spacing: 12) {
                             Button(action: addToLibrary) {
@@ -234,6 +302,25 @@ struct SearchDetailView: View {
                     onDismiss: { showWatchlistOptions = false }
                 )
             }
+            .onAppear {
+                loadWatchProviders()
+            }
+        }
+    }
+
+    private func loadWatchProviders() {
+        isLoadingProviders = true
+        Task {
+            do {
+                if result.mediaType == "tv", let id = result.id {
+                    self.watchProviders = try await tmdb.getTVWatchProviders(tvId: id)
+                } else if result.mediaType == "movie", let id = result.id {
+                    self.watchProviders = try await tmdb.getMovieWatchProviders(movieId: id)
+                }
+            } catch {
+                print("Error loading watch providers: \(error)")
+            }
+            isLoadingProviders = false
         }
     }
     
