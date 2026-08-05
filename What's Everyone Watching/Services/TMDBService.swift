@@ -78,10 +78,34 @@ class TMDBService: NSObject, ObservableObject {
         components.queryItems = [
             URLQueryItem(name: "api_key", value: apiKey)
         ]
-        
+
         return try await fetch(url: components.url!)
     }
-    
+
+    // MARK: - Trending
+
+    func getTrendingTV() async throws -> [SearchResult] {
+        let endpoint = "\(baseURL)/trending/tv/day"
+        var components = URLComponents(string: endpoint)!
+        components.queryItems = [
+            URLQueryItem(name: "api_key", value: apiKey)
+        ]
+
+        let response: MultiSearchResponse = try await fetch(url: components.url!)
+        return response.results.filter { $0.mediaType == "tv" }
+    }
+
+    func getTrendingMovies() async throws -> [SearchResult] {
+        let endpoint = "\(baseURL)/trending/movie/day"
+        var components = URLComponents(string: endpoint)!
+        components.queryItems = [
+            URLQueryItem(name: "api_key", value: apiKey)
+        ]
+
+        let response: MultiSearchResponse = try await fetch(url: components.url!)
+        return response.results.filter { $0.mediaType == "movie" }
+    }
+
     // MARK: - Private
     
     private func fetch<T: Decodable>(url: URL) async throws -> T {
