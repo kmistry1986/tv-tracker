@@ -198,10 +198,19 @@ struct MovieDetailView: View {
     }
 
     private func loadUserPlatforms() {
-        // This would typically load from user preferences
-        // For now, we'll keep it as a placeholder that can be expanded
-        // In a real implementation, this would fetch from the user's profile
-        userPlatforms = []
+        guard let userId = supabase.currentUser?.id else { return }
+
+        Task {
+            do {
+                let platformIds = try await supabase.getUserPlatforms(userId: userId)
+                let platformNames = platformIds.compactMap { StreamingPlatformMapper.getDisplayName(for: $0) }
+                DispatchQueue.main.async {
+                    self.userPlatforms = Set(platformNames)
+                }
+            } catch {
+                print("Error loading user platforms: \(error)")
+            }
+        }
     }
 }
 

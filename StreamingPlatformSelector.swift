@@ -3,7 +3,7 @@ import SwiftUI
 struct StreamingPlatformSelector: View {
     @Binding var selectedPlatformIds: [Int]
     
-    // Common streaming platforms with their TMDB provider IDs
+    // Streaming platforms with their TMDB provider IDs
     let platforms: [(id: Int, name: String, icon: String, color: Color)] = [
         (8, "Netflix", "n.square.fill", .red),
         (337, "Disney+", "d.square.fill", .blue),
@@ -14,7 +14,19 @@ struct StreamingPlatformSelector: View {
         (531, "Paramount+", "p.square.fill", .blue),
         (1899, "Max", "m.square.fill", .indigo),
         (372, "Peacock", "bird.fill", .orange),
-        (2, "Apple iTunes", "cart.fill", .pink)
+        (2, "Apple iTunes", "cart.fill", .pink),
+        (3, "Google Play", "play.fill", .blue),
+        (29, "Vudu", "play.rectangle.fill", .red),
+        (192, "YouTube", "play.circle.fill", .red),
+        (105, "Crunchyroll", "play.fill", .orange),
+        (188, "BritBox", "play.fill", .purple),
+        (37, "Showtime", "play.fill", .black),
+        (45, "Starz", "play.fill", .black),
+        (505, "FuboTV", "tv.fill", .purple),
+        (456, "Sling TV", "tv.fill", .blue),
+        (386, "YouTube TV", "tv.fill", .red),
+        (257, "Tubi", "play.fill", .gray),
+        (189, "Pluto TV", "play.fill", .purple)
     ]
     
     var body: some View {

@@ -18,6 +18,11 @@ import SwiftUI
                     .environmentObject(supabase)
             }
         }
+        .onAppear {
+            Task {
+                await StreamingPlatformMapper.loadPlatforms()
+            }
+        }
     }
 }
 

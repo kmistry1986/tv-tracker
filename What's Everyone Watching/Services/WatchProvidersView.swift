@@ -4,6 +4,49 @@ struct WatchProvidersView: View {
     let providers: WatchProvidersResult
     var userPlatforms: Set<String> = []
 
+    private func isUserSubscribedTo(provider: WatchProvider) -> Bool {
+        let providerName = provider.providerName.lowercased()
+            .replacingOccurrences(of: " with ads", with: "")
+            .replacingOccurrences(of: " (basic)", with: "")
+            .trimmingCharacters(in: .whitespaces)
+
+        for platform in userPlatforms {
+            let platformLower = platform.lowercased()
+                .replacingOccurrences(of: " with ads", with: "")
+                .replacingOccurrences(of: " (basic)", with: "")
+                .trimmingCharacters(in: .whitespaces)
+
+            // Exact match first
+            if providerName == platformLower {
+                return true
+            }
+
+            // Partial matches - only if both contain the keyword
+            if platformLower.contains("amazon") && providerName.contains("amazon") {
+                return true
+            }
+
+            if (platformLower.contains("hbo") || platformLower.contains("max")) &&
+               (providerName.contains("hbo") || providerName.contains("max")) {
+                return true
+            }
+
+            if platformLower.contains("apple") && providerName.contains("apple") {
+                return true
+            }
+
+            if platformLower.contains("disney") && providerName.contains("disney") {
+                return true
+            }
+
+            if platformLower.contains("paramount") && providerName.contains("paramount") {
+                return true
+            }
+        }
+
+        return false
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Where to Watch")
@@ -67,9 +110,11 @@ struct WatchProvidersView: View {
     }
     
     private func providerLogos(providers: [WatchProvider]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        let deduplicatedProviders = deduplicateProviders(providers)
+
+        return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
-                ForEach(providers.sorted(by: { $0.displayPriority < $1.displayPriority })) { provider in
+                ForEach(deduplicatedProviders.sorted(by: { $0.displayPriority < $1.displayPriority })) { provider in
                     VStack(spacing: 4) {
                         ZStack(alignment: .topTrailing) {
                             AsyncImage(url: URL(string: provider.logoUrl)) { image in
@@ -84,9 +129,9 @@ struct WatchProvidersView: View {
 
                             // Subscription status badge
                             if !userPlatforms.isEmpty {
-                                Image(systemName: userPlatforms.contains(provider.providerName) ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                Image(systemName: isUserSubscribedTo(provider: provider) ? "checkmark.circle.fill" : "xmark.circle.fill")
                                     .font(.system(size: 16))
-                                    .foregroundColor(userPlatforms.contains(provider.providerName) ? .green : .red)
+                                    .foregroundColor(isUserSubscribedTo(provider: provider) ? .green : .red)
                                     .background(Circle().fill(Color(.systemBackground)).frame(width: 20, height: 20))
                                     .offset(x: 4, y: -4)
                             }
@@ -96,11 +141,30 @@ struct WatchProvidersView: View {
                             .font(.caption2)
                             .lineLimit(2)
                             .multilineTextAlignment(.center)
-                            .frame(width: 60)
+                            .frame(minWidth: 60, maxWidth: 70)
                     }
                 }
             }
         }
+    }
+
+    private func deduplicateProviders(_ providers: [WatchProvider]) -> [WatchProvider] {
+        var seen = Set<String>()
+        var deduped: [WatchProvider] = []
+
+        for provider in providers {
+            let key = provider.providerName.lowercased()
+                .replacingOccurrences(of: " with ads", with: "")
+                .replacingOccurrences(of: " (basic)", with: "")
+                .trimmingCharacters(in: .whitespaces)
+
+            if !seen.contains(key) {
+                seen.insert(key)
+                deduped.append(provider)
+            }
+        }
+
+        return deduped
     }
 }
 

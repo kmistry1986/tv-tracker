@@ -909,3 +909,19 @@ struct AnyCodable: Codable {
         }
     }
 }
+
+// MARK: - Streaming Platforms
+
+struct StreamingPlatformRow: Decodable {
+    let id: Int
+    let display_name: String
+    let tmdb_provider_names: [String]
+}
+
+extension SupabaseService {
+    func getStreamingPlatforms() async throws -> [StreamingPlatformRow] {
+        let endpoint = "\(supabaseURL)/rest/v1/streaming_platforms?select=id,display_name,tmdb_provider_names"
+        let results: [StreamingPlatformRow] = try await fetch(endpoint: endpoint)
+        return results
+    }
+}
