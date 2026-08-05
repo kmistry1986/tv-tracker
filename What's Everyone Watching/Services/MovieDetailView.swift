@@ -2,11 +2,12 @@ import SwiftUI
 
 struct MovieDetailView: View {
     let movieId: Int
-    
+
     @StateObject private var tmdb = TMDBService.shared
     @StateObject private var supabase = SupabaseService.shared
     @State private var movie: MovieDetail?
     @State private var watchProviders: WatchProvidersResult?
+    @State private var userPlatforms: Set<String> = []
     @State private var isLoading = false
     @State private var error: String?
     
@@ -57,45 +58,76 @@ struct MovieDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await loadMovieDetails()
+            loadUserPlatforms()
         }
     }
     
     // MARK: - Header Section
     
     private func headerSection(movie: MovieDetail) -> some View {
-        HStack(alignment: .top, spacing: 16) {
-            // Poster
-            if let imageUrl = movie.imageUrl, let url = URL(string: imageUrl) {
-                AsyncImage(url: url) { image in
-                    image
-                        .resizable()
-                        .scaledToFill()
-                } placeholder: {
-                    Color.gray
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 16) {
+                // Poster
+                VStack(spacing: 8) {
+                    if let imageUrl = movie.imageUrl, let url = URL(string: imageUrl) {
+                        AsyncImage(url: url) { image in
+                            image
+                                .resizable()
+                                .scaledToFill()
+                        } placeholder: {
+                            Color.gray
+                        }
+                        .frame(width: 120, height: 180)
+                        .cornerRadius(12)
+                        .shadow(radius: 5)
+                    }
+
+                    // Streaming Availability Below Poster
+                    if let providers = watchProviders {
+                        if let streamingProviders = providers.flatrate, !streamingProviders.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Available On")
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.gray)
+
+                                HStack(spacing: 4) {
+                                    ForEach(streamingProviders.prefix(2)) { provider in
+                                        HStack(spacing: 2) {
+                                            Image(systemName: userPlatforms.contains(provider.providerName) ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                                .foregroundColor(userPlatforms.contains(provider.providerName) ? .green : .red)
+                                                .font(.caption2)
+
+                                            Text(provider.providerName)
+                                                .font(.caption2)
+                                        }
+                                        .padding(2)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-                .frame(width: 120, height: 180)
-                .cornerRadius(12)
-                .shadow(radius: 5)
-            }
-            
-            // Basic Info
-            VStack(alignment: .leading, spacing: 8) {
-                Text(movie.title)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                
-                if let releaseDate = movie.releaseDate {
-                    Label(releaseDate.prefix(4), systemImage: "calendar")
+
+                // Basic Info
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(movie.title)
+                        .font(.title2)
+                        .fontWeight(.bold)
+
+                    if let releaseDate = movie.releaseDate {
+                        Label(releaseDate.prefix(4), systemImage: "calendar")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Label("Movie", systemImage: "film")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                
-                Label("Movie", systemImage: "film")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+
+                Spacer()
             }
-            
-            Spacer()
         }
         .padding()
     }
@@ -171,24 +203,31 @@ struct MovieDetailView: View {
     }
     
     // MARK: - Loading
-    
+
     private func loadMovieDetails() async {
         isLoading = true
         error = nil
-        
+
         do {
             // Load movie details and watch providers concurrently
             async let movieData = tmdb.getMovie(id: movieId)
             async let providersData = tmdb.getMovieWatchProviders(movieId: movieId)
-            
+
             self.movie = try await movieData
             self.watchProviders = try await providersData
         } catch {
             self.error = error.localizedDescription
             print("Error loading movie details: \(error)")
         }
-        
+
         isLoading = false
+    }
+
+    private func loadUserPlatforms() {
+        // This would typically load from user preferences
+        // For now, we'll keep it as a placeholder that can be expanded
+        // In a real implementation, this would fetch from the user's profile
+        userPlatforms = []
     }
 }
 

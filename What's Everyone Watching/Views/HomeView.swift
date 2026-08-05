@@ -76,13 +76,14 @@ struct HomeView: View {
                                             .frame(width: 100, height: 150)
                                             .cornerRadius(8)
                                     }
-                                    
+
                                     Text(show.displayTitle)
                                         .font(.caption)
                                         .lineLimit(2)
                                         .multilineTextAlignment(.center)
-                                        .frame(width: 100)
+                                        .frame(width: 100, height: 36, alignment: .center)
                                 }
+                                .frame(width: 100)
                             }
                             .buttonStyle(PlainButtonStyle())
                         }
@@ -128,13 +129,14 @@ struct HomeView: View {
                                             .frame(width: 100, height: 150)
                                             .cornerRadius(8)
                                     }
-                                    
+
                                     Text(movie.displayTitle)
                                         .font(.caption)
                                         .lineLimit(2)
                                         .multilineTextAlignment(.center)
-                                        .frame(width: 100)
+                                        .frame(width: 100, height: 36, alignment: .center)
                                 }
+                                .frame(width: 100)
                             }
                             .buttonStyle(PlainButtonStyle())
                         }

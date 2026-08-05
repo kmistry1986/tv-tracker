@@ -2,11 +2,12 @@ import SwiftUI
 
 struct TVShowDetailView: View {
     let showId: Int
-    
+
     @StateObject private var tmdb = TMDBService.shared
     @StateObject private var supabase = SupabaseService.shared
     @State private var show: TVShowDetail?
     @State private var watchProviders: WatchProvidersResult?
+    @State private var userPlatforms: Set<String> = []
     @State private var isLoading = false
     @State private var error: String?
     
@@ -57,6 +58,7 @@ struct TVShowDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await loadShowDetails()
+            loadUserPlatforms()
         }
     }
     
@@ -78,38 +80,68 @@ struct TVShowDetailView: View {
                 .shadow(radius: 5)
             }
             
-            // Basic Info
-            VStack(alignment: .leading, spacing: 8) {
-                Text(show.name)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                
-                if let firstAirDate = show.firstAirDate {
-                    Label(firstAirDate.prefix(4), systemImage: "calendar")
+            VStack(alignment: .leading, spacing: 12) {
+                // Basic Info
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(show.name)
+                        .font(.title2)
+                        .fontWeight(.bold)
+
+                    if let firstAirDate = show.firstAirDate {
+                        Label(firstAirDate.prefix(4), systemImage: "calendar")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Label(show.displayStatus, systemImage: "tv")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                }
-                
-                Label(show.displayStatus, systemImage: "tv")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Label("\(show.numberOfSeasons) Season\(show.numberOfSeasons == 1 ? "" : "s")", systemImage: "list.bullet")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Label("\(show.numberOfEpisodes) Episode\(show.numberOfEpisodes == 1 ? "" : "s")", systemImage: "film")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                if !show.displayGenres.isEmpty && show.displayGenres != "Unknown" {
-                    Text(show.displayGenres)
+
+                    Label("\(show.numberOfSeasons) Season\(show.numberOfSeasons == 1 ? "" : "s")", systemImage: "list.bullet")
                         .font(.caption)
-                        .foregroundColor(.blue)
-                        .lineLimit(2)
+                        .foregroundColor(.secondary)
+
+                    Label("\(show.numberOfEpisodes) Episode\(show.numberOfEpisodes == 1 ? "" : "s")", systemImage: "film")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    if !show.displayGenres.isEmpty && show.displayGenres != "Unknown" {
+                        Text(show.displayGenres)
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                            .lineLimit(2)
+                    }
+                }
+
+                // Streaming Availability
+                if let providers = watchProviders {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Available On")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.gray)
+
+                        if let streamingProviders = providers.flatrate, !streamingProviders.isEmpty {
+                            HStack(spacing: 6) {
+                                ForEach(streamingProviders) { provider in
+                                    HStack(spacing: 4) {
+                                        Image(systemName: userPlatforms.contains(provider.providerName) ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                            .foregroundColor(userPlatforms.contains(provider.providerName) ? .green : .red)
+                                            .font(.caption)
+
+                                        Text(provider.providerName)
+                                            .font(.caption2)
+                                    }
+                                    .padding(4)
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(4)
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            
+
             Spacer()
         }
         .padding()
@@ -190,24 +222,31 @@ struct TVShowDetailView: View {
     }
     
     // MARK: - Loading
-    
+
     private func loadShowDetails() async {
         isLoading = true
         error = nil
-        
+
         do {
             // Load show details and watch providers concurrently
             async let showData = tmdb.getTVShow(id: showId)
             async let providersData = tmdb.getTVWatchProviders(tvId: showId)
-            
+
             self.show = try await showData
             self.watchProviders = try await providersData
         } catch {
             self.error = error.localizedDescription
             print("Error loading show details: \(error)")
         }
-        
+
         isLoading = false
+    }
+
+    private func loadUserPlatforms() {
+        // This would typically load from user preferences
+        // For now, we'll keep it as a placeholder that can be expanded
+        // In a real implementation, this would fetch from the user's profile
+        userPlatforms = []
     }
 }
 
