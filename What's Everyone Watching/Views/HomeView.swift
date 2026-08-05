@@ -19,11 +19,13 @@ struct HomeView: View {
                 VStack(spacing: 0) {
                     // Search section that expands
                     VStack(spacing: 0) {
-                        // Search bar (always visible)
-                        searchButtonSection
-                            .padding(.horizontal)
-                            .padding(.top, 8)
-                        
+                        // Search bar (hidden when search is active)
+                        if !showSearchOverlay {
+                            searchButtonSection
+                                .padding(.horizontal)
+                                .padding(.top, 8)
+                        }
+
                         // Search results expand below the bar
                         if showSearchOverlay {
                             searchResultsSection
@@ -95,14 +97,8 @@ struct HomeView: View {
             HStack {
                 Text("Trending TV Shows")
                     .font(.headline)
-                
+
                 Spacer()
-                
-                NavigationLink(destination: SearchView()) {
-                    Text("See All")
-                        .font(.caption)
-                        .foregroundColor(.blue)
-                }
             }
             
             ScrollView(.horizontal, showsIndicators: false) {
@@ -148,14 +144,8 @@ struct HomeView: View {
             HStack {
                 Text("Trending Movies")
                     .font(.headline)
-                
+
                 Spacer()
-                
-                NavigationLink(destination: SearchView()) {
-                    Text("See All")
-                        .font(.caption)
-                        .foregroundColor(.blue)
-                }
             }
             
             ScrollView(.horizontal, showsIndicators: false) {

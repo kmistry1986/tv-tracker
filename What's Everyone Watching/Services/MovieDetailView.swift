@@ -23,7 +23,7 @@ struct MovieDetailView: View {
                     
                     // Watch Providers
                     if let providers = watchProviders {
-                        WatchProvidersView(providers: providers)
+                        WatchProvidersView(providers: providers, userPlatforms: userPlatforms)
                             .padding(.horizontal)
                     }
                     
@@ -80,32 +80,6 @@ struct MovieDetailView: View {
                         .frame(width: 120, height: 180)
                         .cornerRadius(12)
                         .shadow(radius: 5)
-                    }
-
-                    // Streaming Availability Below Poster
-                    if let providers = watchProviders {
-                        if let streamingProviders = providers.flatrate, !streamingProviders.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Available On")
-                                    .font(.caption2)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.gray)
-
-                                HStack(spacing: 4) {
-                                    ForEach(streamingProviders.prefix(2)) { provider in
-                                        HStack(spacing: 2) {
-                                            Image(systemName: userPlatforms.contains(provider.providerName) ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                                .foregroundColor(userPlatforms.contains(provider.providerName) ? .green : .red)
-                                                .font(.caption2)
-
-                                            Text(provider.providerName)
-                                                .font(.caption2)
-                                        }
-                                        .padding(2)
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
 

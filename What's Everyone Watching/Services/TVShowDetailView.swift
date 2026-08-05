@@ -23,7 +23,7 @@ struct TVShowDetailView: View {
                     
                     // Watch Providers
                     if let providers = watchProviders {
-                        WatchProvidersView(providers: providers)
+                        WatchProvidersView(providers: providers, userPlatforms: userPlatforms)
                             .padding(.horizontal)
                     }
                     
@@ -80,65 +80,34 @@ struct TVShowDetailView: View {
                 .shadow(radius: 5)
             }
             
-            VStack(alignment: .leading, spacing: 12) {
-                // Basic Info
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(show.name)
-                        .font(.title2)
-                        .fontWeight(.bold)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(show.name)
+                    .font(.title2)
+                    .fontWeight(.bold)
 
-                    if let firstAirDate = show.firstAirDate {
-                        Label(firstAirDate.prefix(4), systemImage: "calendar")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                    Label(show.displayStatus, systemImage: "tv")
+                if let firstAirDate = show.firstAirDate {
+                    Label(firstAirDate.prefix(4), systemImage: "calendar")
                         .font(.caption)
                         .foregroundColor(.secondary)
-
-                    Label("\(show.numberOfSeasons) Season\(show.numberOfSeasons == 1 ? "" : "s")", systemImage: "list.bullet")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    Label("\(show.numberOfEpisodes) Episode\(show.numberOfEpisodes == 1 ? "" : "s")", systemImage: "film")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    if !show.displayGenres.isEmpty && show.displayGenres != "Unknown" {
-                        Text(show.displayGenres)
-                            .font(.caption)
-                            .foregroundColor(.blue)
-                            .lineLimit(2)
-                    }
                 }
 
-                // Streaming Availability
-                if let providers = watchProviders {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Available On")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.gray)
+                Label(show.displayStatus, systemImage: "tv")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
 
-                        if let streamingProviders = providers.flatrate, !streamingProviders.isEmpty {
-                            HStack(spacing: 6) {
-                                ForEach(streamingProviders) { provider in
-                                    HStack(spacing: 4) {
-                                        Image(systemName: userPlatforms.contains(provider.providerName) ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                            .foregroundColor(userPlatforms.contains(provider.providerName) ? .green : .red)
-                                            .font(.caption)
+                Label("\(show.numberOfSeasons) Season\(show.numberOfSeasons == 1 ? "" : "s")", systemImage: "list.bullet")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
 
-                                        Text(provider.providerName)
-                                            .font(.caption2)
-                                    }
-                                    .padding(4)
-                                    .background(Color(.systemGray6))
-                                    .cornerRadius(4)
-                                }
-                            }
-                        }
-                    }
+                Label("\(show.numberOfEpisodes) Episode\(show.numberOfEpisodes == 1 ? "" : "s")", systemImage: "film")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                if !show.displayGenres.isEmpty && show.displayGenres != "Unknown" {
+                    Text(show.displayGenres)
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                        .lineLimit(2)
                 }
             }
 

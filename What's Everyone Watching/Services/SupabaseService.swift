@@ -189,29 +189,30 @@ class SupabaseService: NSObject, ObservableObject {
     
     private func refreshAccessToken() async throws {
         guard !refreshToken.isEmpty else {
-            throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "No refresh token available"])
+            print("⚠️ No refresh token available, skipping refresh")
+            return
         }
-        
+
         let endpoint = "\(supabaseURL)/auth/v1/token?grant_type=refresh_token"
-        
+
         var request = URLRequest(url: URL(string: endpoint)!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
-        
+
         struct RefreshBody: Encodable {
             let refresh_token: String
         }
-        
+
         let body = RefreshBody(refresh_token: refreshToken)
         request.httpBody = try JSONEncoder().encode(body)
-        
+
         let (data, response) = try await URLSession.shared.data(for: request)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             print("❌ Token refresh failed")
             throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Token refresh failed"])
         }
-        
+
         struct TokenResponse: Decodable {
             let access_token: String?
             let refresh_token: String?
@@ -654,41 +655,82 @@ class SupabaseService: NSObject, ObservableObject {
     
     func saveUserPlatforms(userId: String, platformIds: [Int]) async throws {
         // First, delete existing platforms for this user
-        let deleteEndpoint = "\(supabaseURL)/rest/v1/user_streaming_platforms?user_id=eq.\(userId)"
-        var deleteRequest = URLRequest(url: URL(string: deleteEndpoint)!)
-        deleteRequest.httpMethod = "DELETE"
-        deleteRequest.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
-        if !authToken.isEmpty {
-            deleteRequest.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
-        }
-        
-        _ = try await URLSession.shared.data(for: deleteRequest)
-        
+        try await deleteUserPlatforms(userId: userId)
+
         // Now insert the new platforms
         if !platformIds.isEmpty {
             let endpoint = "\(supabaseURL)/rest/v1/user_streaming_platforms"
-            
+
             struct PlatformInsert: Encodable {
                 let user_id: String
                 let platform_id: Int
             }
-            
+
             for platformId in platformIds {
                 let body = PlatformInsert(user_id: userId, platform_id: platformId)
                 try await insert(endpoint: endpoint, body: body)
             }
         }
     }
+
+    private func deleteUserPlatforms(userId: String) async throws {
+        let deleteEndpoint = "\(supabaseURL)/rest/v1/user_streaming_platforms?user_id=eq.\(userId)"
+
+        do {
+            try await performDelete(endpoint: deleteEndpoint)
+        } catch let error as NSError where error.code == 401 {
+            // Token expired, try to refresh
+            print("🔄 Token expired on delete, attempting refresh...")
+            do {
+                try await refreshAccessToken()
+                // Retry with new token
+                try await performDelete(endpoint: deleteEndpoint)
+            } catch {
+                // If refresh fails, user needs to log in again
+                print("❌ Token refresh failed, user session expired")
+                signOut()
+                throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Session expired. Please log in again."])
+            }
+        }
+    }
+
+    private func performDelete(endpoint: String) async throws {
+        var request = URLRequest(url: URL(string: endpoint)!)
+        request.httpMethod = "DELETE"
+        request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        if !authToken.isEmpty {
+            request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        let httpResponse = response as? HTTPURLResponse
+        let statusCode = httpResponse?.statusCode ?? -1
+
+        guard statusCode == 200 || statusCode == 204 else {
+            throw NSError(domain: "API", code: statusCode, userInfo: [
+                NSLocalizedDescriptionKey: "Delete request failed with status \(statusCode)"
+            ])
+        }
+    }
     
     func getUserPlatforms(userId: String) async throws -> [Int] {
         let endpoint = "\(supabaseURL)/rest/v1/user_streaming_platforms?user_id=eq.\(userId)&select=platform_id"
-        
+
         struct PlatformResult: Decodable {
             let platform_id: Int
         }
-        
-        let results: [PlatformResult] = try await fetch(endpoint: endpoint)
-        return results.map { $0.platform_id }
+
+        do {
+            let results: [PlatformResult] = try await fetch(endpoint: endpoint)
+            return results.map { $0.platform_id }
+        } catch {
+            // If no auth token or refresh token, just return empty (new user case)
+            if refreshToken.isEmpty {
+                print("⚠️ No platforms saved yet (new user)")
+                return []
+            }
+            throw error
+        }
     }
 
     func updateUserProfile(userId: String, displayName: String? = nil, bio: String? = nil, isPublic: Bool? = nil) async throws {

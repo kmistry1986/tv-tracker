@@ -2,7 +2,8 @@ import SwiftUI
 
 struct WatchProvidersView: View {
     let providers: WatchProvidersResult
-    
+    var userPlatforms: Set<String> = []
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Where to Watch")
@@ -70,16 +71,27 @@ struct WatchProvidersView: View {
             HStack(spacing: 12) {
                 ForEach(providers.sorted(by: { $0.displayPriority < $1.displayPriority })) { provider in
                     VStack(spacing: 4) {
-                        AsyncImage(url: URL(string: provider.logoUrl)) { image in
-                            image
-                                .resizable()
-                                .scaledToFit()
-                        } placeholder: {
-                            Color.gray
+                        ZStack(alignment: .topTrailing) {
+                            AsyncImage(url: URL(string: provider.logoUrl)) { image in
+                                image
+                                    .resizable()
+                                    .scaledToFit()
+                            } placeholder: {
+                                Color.gray
+                            }
+                            .frame(width: 50, height: 50)
+                            .cornerRadius(8)
+
+                            // Subscription status badge
+                            if !userPlatforms.isEmpty {
+                                Image(systemName: userPlatforms.contains(provider.providerName) ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(userPlatforms.contains(provider.providerName) ? .green : .red)
+                                    .background(Circle().fill(Color(.systemBackground)).frame(width: 20, height: 20))
+                                    .offset(x: 4, y: -4)
+                            }
                         }
-                        .frame(width: 50, height: 50)
-                        .cornerRadius(8)
-                        
+
                         Text(provider.providerName)
                             .font(.caption2)
                             .lineLimit(2)
