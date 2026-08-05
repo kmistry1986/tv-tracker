@@ -2,12 +2,17 @@ import SwiftUI
 
 @main struct MyApp: App {
     @StateObject private var supabase = SupabaseService.shared
-    
+
     var body: some Scene {
         WindowGroup {
             if supabase.isLoggedIn {
-                MainTabView()
-                    .environmentObject(supabase)
+                if supabase.profileSetupNeeded {
+                    ProfileSetupView()
+                        .environmentObject(supabase)
+                } else {
+                    MainTabView()
+                        .environmentObject(supabase)
+                }
             } else {
                 AuthView()
                     .environmentObject(supabase)

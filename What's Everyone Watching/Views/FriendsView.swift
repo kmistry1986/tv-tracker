@@ -53,7 +53,13 @@ struct FriendsView: View {
         Group {
             if friends.isEmpty {
                 VStack {
+                    Image(systemName: "person.2.circle")
+                        .font(.system(size: 40))
+                        .foregroundColor(.gray.opacity(0.5))
                     Text("No friends yet")
+                        .foregroundColor(.gray)
+                    Text("Search to find and add friends")
+                        .font(.caption)
                         .foregroundColor(.gray)
                     Spacer()
                 }
@@ -63,6 +69,10 @@ struct FriendsView: View {
                     ForEach(friends, id: \.id) { friend in
                         NavigationLink(destination: FriendProfileView(userId: friend.id, userName: friend.name)) {
                             HStack(spacing: 12) {
+                                Image(systemName: "person.crop.circle.fill")
+                                    .font(.system(size: 32))
+                                    .foregroundColor(.blue)
+
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(friend.name)
                                         .fontWeight(.semibold)
@@ -93,6 +103,9 @@ struct FriendsView: View {
         Group {
             if friendRequests.isEmpty {
                 VStack {
+                    Image(systemName: "envelope.badge")
+                        .font(.system(size: 40))
+                        .foregroundColor(.gray.opacity(0.5))
                     Text("No friend requests")
                         .foregroundColor(.gray)
                     Spacer()
@@ -102,24 +115,32 @@ struct FriendsView: View {
                 List {
                     ForEach(friendRequests, id: \.id) { request in
                         HStack(spacing: 12) {
+                            Image(systemName: "person.crop.circle.fill")
+                                .font(.system(size: 32))
+                                .foregroundColor(.blue)
+
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Request from \(request.userId)")
+                                Text("Friend Request")
                                     .fontWeight(.semibold)
+                                Text(request.userId)
                                     .font(.caption)
+                                    .foregroundColor(.gray)
                             }
                             Spacer()
 
                             Button(action: { acceptRequest(request) }) {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundColor(.green)
+                                    .font(.system(size: 20))
                             }
 
                             Button(action: { rejectRequest(request.id) }) {
                                 Image(systemName: "xmark.circle.fill")
                                     .foregroundColor(.red)
+                                    .font(.system(size: 20))
                             }
                         }
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 8)
                     }
                 }
             }
@@ -211,6 +232,9 @@ struct SearchFriendsView: View {
                     }
                 } else if results.isEmpty {
                     VStack {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 40))
+                            .foregroundColor(.gray.opacity(0.5))
                         Text("Search for friends")
                             .foregroundColor(.gray)
                         Spacer()
@@ -219,6 +243,10 @@ struct SearchFriendsView: View {
                 } else {
                     List(results, id: \.id) { result in
                         HStack(spacing: 12) {
+                            Image(systemName: "person.crop.circle.fill")
+                                .font(.system(size: 32))
+                                .foregroundColor(.blue)
+
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(result.displayName)
                                     .fontWeight(.semibold)
@@ -233,6 +261,7 @@ struct SearchFriendsView: View {
                             Button(action: { sendRequest(result.userId) }) {
                                 Image(systemName: "person.badge.plus")
                                     .foregroundColor(.blue)
+                                    .font(.system(size: 18))
                             }
                         }
                         .padding(.vertical, 4)

@@ -10,9 +10,11 @@ class SupabaseService: NSObject, ObservableObject {
     
     @Published var currentUser: User?
     @Published var isLoggedIn = false
-    
+    @Published var profileSetupNeeded = false
+
     private let userDefaultsKey = "savedUser"
     private let tokenDefaultsKey = "authToken"
+    private let profileSetupKey = "profileSetupNeeded"
     private var authToken: String = ""
     
     override private init() {
@@ -30,9 +32,11 @@ class SupabaseService: NSObject, ObservableObject {
                 self.authToken = token
                 print("Restored auth token")
             }
+            let needsSetup = UserDefaults.standard.bool(forKey: profileSetupKey)
             DispatchQueue.main.async {
                 self.currentUser = user
                 self.isLoggedIn = true
+                self.profileSetupNeeded = needsSetup
             }
         }
     }
@@ -44,6 +48,13 @@ class SupabaseService: NSObject, ObservableObject {
         }
         UserDefaults.standard.set(token, forKey: tokenDefaultsKey)
         self.authToken = token
+    }
+
+    private func setProfileSetupNeeded(_ needed: Bool) {
+        DispatchQueue.main.async {
+            self.profileSetupNeeded = needed
+        }
+        UserDefaults.standard.set(needed, forKey: profileSetupKey)
     }
     
     private func clearSession() {
@@ -86,16 +97,18 @@ class SupabaseService: NSObject, ObservableObject {
         print("SignUp userId: \(userId)")
         
         let user = User(id: userId, email: email, name: name, avatarUrl: nil)
-        
+
         self.authToken = ""
         try await insertUser(user: user)
-        
+
         DispatchQueue.main.async {
             self.currentUser = user
             self.isLoggedIn = true
+            self.profileSetupNeeded = true
             self.saveSession(user: user, token: "")
+            self.setProfileSetupNeeded(true)
         }
-        
+
         return user
     }
     
@@ -568,6 +581,14 @@ class SupabaseService: NSObject, ObservableObject {
             created_at: ISO8601DateFormatter().string(from: Date())
         )
         try await insert(endpoint: endpoint, body: body)
+    }
+
+    func completeProfileSetup(userId: String, displayName: String, bio: String? = nil) async throws {
+        try await createUserProfile(userId: userId, displayName: displayName)
+        if let bio = bio {
+            try await updateUserProfile(userId: userId, displayName: displayName, bio: bio, isPublic: true)
+        }
+        setProfileSetupNeeded(false)
     }
 
     func updateUserProfile(userId: String, displayName: String? = nil, bio: String? = nil, isPublic: Bool? = nil) async throws {
