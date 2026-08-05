@@ -1,0 +1,238 @@
+import SwiftUI
+
+struct TVShowDetailView: View {
+    let showId: Int
+    
+    @StateObject private var tmdb = TMDBService.shared
+    @StateObject private var supabase = SupabaseService.shared
+    @State private var show: TVShowDetail?
+    @State private var watchProviders: WatchProvidersResult?
+    @State private var isLoading = false
+    @State private var error: String?
+    
+    var body: some View {
+        ScrollView {
+            if isLoading {
+                ProgressView()
+                    .padding()
+            } else if let show = show {
+                VStack(alignment: .leading, spacing: 20) {
+                    // Header with poster and basic info
+                    headerSection(show: show)
+                    
+                    // Watch Providers
+                    if let providers = watchProviders {
+                        WatchProvidersView(providers: providers)
+                            .padding(.horizontal)
+                    }
+                    
+                    // Overview
+                    overviewSection(show: show)
+                    
+                    // Show Details
+                    detailsSection(show: show)
+                    
+                    // Action Buttons
+                    actionButtonsSection(show: show)
+                }
+                .padding(.bottom)
+            } else if let error = error {
+                VStack(spacing: 16) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 50))
+                        .foregroundColor(.orange)
+                    
+                    Text("Error Loading Show")
+                        .font(.headline)
+                    
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding()
+            }
+        }
+        .navigationTitle(show?.name ?? "Loading...")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadShowDetails()
+        }
+    }
+    
+    // MARK: - Header Section
+    
+    private func headerSection(show: TVShowDetail) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            // Poster
+            if let imageUrl = show.imageUrl, let url = URL(string: imageUrl) {
+                AsyncImage(url: url) { image in
+                    image
+                        .resizable()
+                        .scaledToFill()
+                } placeholder: {
+                    Color.gray
+                }
+                .frame(width: 120, height: 180)
+                .cornerRadius(12)
+                .shadow(radius: 5)
+            }
+            
+            // Basic Info
+            VStack(alignment: .leading, spacing: 8) {
+                Text(show.name)
+                    .font(.title2)
+                    .fontWeight(.bold)
+                
+                if let firstAirDate = show.firstAirDate {
+                    Label(firstAirDate.prefix(4), systemImage: "calendar")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Label(show.displayStatus, systemImage: "tv")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Label("\(show.numberOfSeasons) Season\(show.numberOfSeasons == 1 ? "" : "s")", systemImage: "list.bullet")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Label("\(show.numberOfEpisodes) Episode\(show.numberOfEpisodes == 1 ? "" : "s")", systemImage: "film")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                if !show.displayGenres.isEmpty && show.displayGenres != "Unknown" {
+                    Text(show.displayGenres)
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                        .lineLimit(2)
+                }
+            }
+            
+            Spacer()
+        }
+        .padding()
+    }
+    
+    // MARK: - Overview Section
+    
+    private func overviewSection(show: TVShowDetail) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Overview")
+                .font(.headline)
+            
+            Text(show.overview)
+                .font(.body)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal)
+    }
+    
+    // MARK: - Details Section
+    
+    private func detailsSection(show: TVShowDetail) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Details")
+                .font(.headline)
+            
+            VStack(spacing: 8) {
+                DetailRow(label: "Status", value: show.displayStatus)
+                DetailRow(label: "First Aired", value: show.firstAirDate ?? "Unknown")
+                DetailRow(label: "Seasons", value: "\(show.numberOfSeasons)")
+                DetailRow(label: "Total Episodes", value: "\(show.numberOfEpisodes)")
+                if !show.displayGenres.isEmpty && show.displayGenres != "Unknown" {
+                    DetailRow(label: "Genres", value: show.displayGenres)
+                }
+            }
+        }
+        .padding(.horizontal)
+    }
+    
+    // MARK: - Action Buttons
+    
+    private func actionButtonsSection(show: TVShowDetail) -> some View {
+        VStack(spacing: 12) {
+            Button(action: {
+                // TODO: Add to library
+            }) {
+                Label("Add to Library", systemImage: "books.vertical.fill")
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+            }
+            
+            Button(action: {
+                // TODO: Add to watchlist
+            }) {
+                Label("Add to Watchlist", systemImage: "bookmark.fill")
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.green)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+            }
+            
+            Button(action: {
+                // TODO: Rate show
+            }) {
+                Label("Rate This Show", systemImage: "star.fill")
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.orange)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+            }
+        }
+        .padding(.horizontal)
+    }
+    
+    // MARK: - Loading
+    
+    private func loadShowDetails() async {
+        isLoading = true
+        error = nil
+        
+        do {
+            // Load show details and watch providers concurrently
+            async let showData = tmdb.getTVShow(id: showId)
+            async let providersData = tmdb.getTVWatchProviders(tvId: showId)
+            
+            self.show = try await showData
+            self.watchProviders = try await providersData
+        } catch {
+            self.error = error.localizedDescription
+            print("Error loading show details: \(error)")
+        }
+        
+        isLoading = false
+    }
+}
+
+// MARK: - Detail Row Component
+
+struct DetailRow: View {
+    let label: String
+    let value: String
+    
+    var body: some View {
+        HStack {
+            Text(label)
+                .foregroundColor(.secondary)
+            Spacer()
+            Text(value)
+                .fontWeight(.medium)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Preview
+
+#Preview {
+    NavigationStack {
+        TVShowDetailView(showId: 1396) // Breaking Bad
+    }
+}
