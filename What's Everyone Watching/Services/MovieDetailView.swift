@@ -10,6 +10,9 @@ struct MovieDetailView: View {
     @State private var userPlatforms: Set<String> = []
     @State private var isLoading = false
     @State private var error: String?
+    @State private var isInLibrary = false
+    @State private var isInWatchlist = false
+    @State private var hasRating = false
     
     var body: some View {
         ScrollView {
@@ -140,37 +143,64 @@ struct MovieDetailView: View {
     
     private func actionButtonsSection(movie: MovieDetail) -> some View {
         HStack(spacing: 12) {
-            Button(action: {
-                // TODO: Add to library
-            }) {
-                Label("Add to Library", systemImage: "books.vertical.fill")
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
+            ZStack(alignment: .topTrailing) {
+                Button(action: {
+                    // TODO: Add to library
+                }) {
+                    Label("Add to Library", systemImage: "books.vertical.fill")
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                }
+
+                if isInLibrary {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(.green)
+                        .offset(x: 8, y: -8)
+                }
             }
 
-            Button(action: {
-                // TODO: Add to watchlist
-            }) {
-                Label("Add to Watchlist", systemImage: "bookmark.fill")
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.green)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
+            ZStack(alignment: .topTrailing) {
+                Button(action: {
+                    // TODO: Add to watchlist
+                }) {
+                    Label("Add to Watchlist", systemImage: "bookmark.fill")
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.green)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                }
+
+                if isInWatchlist {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(.green)
+                        .offset(x: 8, y: -8)
+                }
             }
 
-            Button(action: {
-                // TODO: Rate movie
-            }) {
-                Label("Rate This Movie", systemImage: "star.fill")
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.orange)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
+            ZStack(alignment: .topTrailing) {
+                Button(action: {
+                    // TODO: Rate movie
+                }) {
+                    Label("Rate This Movie", systemImage: "star.fill")
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.orange)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                }
+
+                if hasRating {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(.green)
+                        .offset(x: 8, y: -8)
+                }
             }
         }
         .padding(.horizontal)
