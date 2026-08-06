@@ -7,7 +7,6 @@ struct StreamingPlatformSelector: View {
     // Sorted by subscriber count (largest first)
     // Subscription services only - rental/purchase platforms (Google Play, YouTube, iTunes, Fandango)
     // and niche services still show in "Where to Watch" but aren't configurable in Settings
-    // Note: Max and HBO Max are the same service (Max is the new name), only HBO Max is shown
     let platforms: [(id: Int, name: String, icon: String, color: Color)] = [
         (8, "Netflix", "n.square.fill", .red),
         (9, "Amazon Prime", "a.square.fill", .cyan),
@@ -16,16 +15,13 @@ struct StreamingPlatformSelector: View {
         (384, "HBO Max", "h.square.fill", .purple),
         (531, "Paramount+", "p.square.fill", .blue),
         (372, "Peacock", "bird.fill", .orange),
+        (350, "Apple TV+", "applelogo", .gray),
         (189, "Pluto TV", "play.fill", .purple),
         (257, "Tubi", "play.fill", .gray),
         (386, "YouTube TV", "tv.fill", .red),
         (105, "Crunchyroll", "play.fill", .orange),
         (37, "Showtime", "play.fill", .black),
-        (45, "Starz", "play.fill", .black),
-        (188, "BritBox", "play.fill", .purple),
-        (456, "Sling TV", "tv.fill", .blue),
-        (505, "FuboTV", "tv.fill", .purple),
-        (350, "Apple TV+", "applelogo", .gray)
+        (45, "Starz", "play.fill", .black)
     ]
     
     var body: some View {
