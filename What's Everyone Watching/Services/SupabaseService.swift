@@ -341,7 +341,7 @@ class SupabaseService: NSObject, ObservableObject {
     }
 
     func fetchUserEpisodes(userId: String) async throws -> [Episode] {
-        let endpoint = "\(supabaseURL)/rest/v1/episodes?user_id=eq.\(userId)&order=watched_at.desc"
+        let endpoint = "\(supabaseURL)/rest/v1/episodes?user_id=eq.\(userId)&watched=eq.true&order=watched_at.desc"
         return try await fetch(endpoint: endpoint)
     }
     
