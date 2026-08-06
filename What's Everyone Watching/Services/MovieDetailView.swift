@@ -286,6 +286,11 @@ struct MovieDetailView: View {
         guard let userId = supabase.currentUser?.id else { return }
         Task {
             do {
+                let alreadyInLibrary = try await supabase.isMovieInLibrary(userId: userId, movieId: movieId)
+                if alreadyInLibrary {
+                    print("Movie already in library")
+                    return
+                }
                 try await supabase.insertUserMovie(userId: userId, movieId: movieId, watchedDate: ISO8601DateFormatter().string(from: Date()))
                 isInLibrary = true
             } catch {
@@ -298,6 +303,11 @@ struct MovieDetailView: View {
         guard let userId = supabase.currentUser?.id else { return }
         Task {
             do {
+                let alreadyInWatchlist = try await supabase.isMovieInWatchlist(userId: userId, movieId: movieId)
+                if alreadyInWatchlist {
+                    print("Movie already in watchlist")
+                    return
+                }
                 try await supabase.addToWatchlistMovie(userId: userId, movieId: movieId)
                 isInWatchlist = true
             } catch {

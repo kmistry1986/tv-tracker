@@ -73,8 +73,7 @@ struct TVShowDetailView: View {
         }
         .sheet(isPresented: $showMarkWatchedModal) {
             MarkWatchedModal(showId: showId, showTitle: show?.name ?? "Show") { selectedEpisodeIds in
-                // Handle selected episodes
-                print("Selected episodes: \(selectedEpisodeIds)")
+                saveWatchedEpisodes(selectedEpisodeIds)
             }
         }
     }
@@ -300,6 +299,11 @@ struct TVShowDetailView: View {
         guard let userId = supabase.currentUser?.id else { return }
         Task {
             do {
+                let alreadyInWatchlist = try await supabase.isShowInWatchlist(userId: userId, showId: showId)
+                if alreadyInWatchlist {
+                    print("Show already in watchlist")
+                    return
+                }
                 try await supabase.addToWatchlistShow(userId: userId, showId: showId)
                 isInWatchlist = true
             } catch {
@@ -311,6 +315,29 @@ struct TVShowDetailView: View {
     private func rateShow() {
         // For now, just toggle the state. Full rating UI would be implemented separately
         hasRating = !hasRating
+    }
+
+    private func saveWatchedEpisodes(_ episodeIds: [Int]) {
+        guard let userId = supabase.currentUser?.id else { return }
+        Task {
+            do {
+                // Check if already in library to avoid duplicate user_shows entry
+                let alreadyInLibrary = try await supabase.isShowInLibrary(userId: userId, showId: showId)
+                if !alreadyInLibrary {
+                    try await supabase.insertUserShow(userId: userId, showId: showId, watchedDate: ISO8601DateFormatter().string(from: Date()))
+                    isInLibrary = true
+                }
+
+                // Mark episodes as watched if any selected
+                for episodeId in episodeIds {
+                    // Update episode watched status in database
+                    // This would need a new Supabase function to update episode watched status
+                    print("Marking episode \(episodeId) as watched")
+                }
+            } catch {
+                print("Error saving watched episodes: \(error)")
+            }
+        }
     }
 }
 

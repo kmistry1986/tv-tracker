@@ -490,10 +490,34 @@ class SupabaseService: NSObject, ObservableObject {
         let endpoint = "\(supabaseURL)/rest/v1/watchlist_shows?user_id=eq.\(userId)&order=priority.asc,added_at.desc"
         return try await fetch(endpoint: endpoint)
     }
-    
+
+    func isShowInWatchlist(userId: String, showId: Int) async throws -> Bool {
+        let endpoint = "\(supabaseURL)/rest/v1/watchlist_shows?user_id=eq.\(userId)&show_id=eq.\(showId)"
+        let results: [WatchlistShow] = try await fetch(endpoint: endpoint)
+        return !results.isEmpty
+    }
+
+    func isShowInLibrary(userId: String, showId: Int) async throws -> Bool {
+        let endpoint = "\(supabaseURL)/rest/v1/user_shows?user_id=eq.\(userId)&show_id=eq.\(showId)"
+        let results: [UserShow] = try await fetch(endpoint: endpoint)
+        return !results.isEmpty
+    }
+
     func fetchWatchlistMovies(userId: String) async throws -> [WatchlistMovie] {
         let endpoint = "\(supabaseURL)/rest/v1/watchlist_movies?user_id=eq.\(userId)&order=priority.asc,added_at.desc"
         return try await fetch(endpoint: endpoint)
+    }
+
+    func isMovieInWatchlist(userId: String, movieId: Int) async throws -> Bool {
+        let endpoint = "\(supabaseURL)/rest/v1/watchlist_movies?user_id=eq.\(userId)&movie_id=eq.\(movieId)"
+        let results: [WatchlistMovie] = try await fetch(endpoint: endpoint)
+        return !results.isEmpty
+    }
+
+    func isMovieInLibrary(userId: String, movieId: Int) async throws -> Bool {
+        let endpoint = "\(supabaseURL)/rest/v1/user_movies?user_id=eq.\(userId)&movie_id=eq.\(movieId)"
+        let results: [UserMovie] = try await fetch(endpoint: endpoint)
+        return !results.isEmpty
     }
     
     func addToWatchlistShow(userId: String, showId: Int, priority: String = "medium", notes: String? = nil) async throws {
