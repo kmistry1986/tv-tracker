@@ -10,8 +10,11 @@ struct MarkWatchedModal: View {
     @State private var markAllWatched = false
     @State private var expandedSeasons = Set<Int>()
     @State private var selectedEpisodes = Set<Int>()
+    @State private var selectedSeasons = Set<Int>()
     @State private var showDetails: TVShowDetail?
     @State private var isLoading = true
+    @State private var seasonEpisodes: [Int: [Episode]] = [:]
+    @State private var loadingSeasons = Set<Int>()
 
     @StateObject private var tmdb = TMDBService.shared
 
@@ -106,10 +109,19 @@ struct MarkWatchedModal: View {
                     .font(.system(size: 12, weight: .semibold))
                     .rotationEffect(.degrees(expandedSeasons.contains(seasonNumber) ? 90 : 0))
 
+                Image(systemName: selectedSeasons.contains(seasonNumber) ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 16))
+                    .foregroundColor(selectedSeasons.contains(seasonNumber) ? .blue : .gray)
+
                 Text("Season \(seasonNumber)")
                     .fontWeight(.medium)
 
                 Spacer()
+
+                if loadingSeasons.contains(seasonNumber) {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                }
             }
             .contentShape(Rectangle())
             .onTapGesture {
@@ -118,6 +130,10 @@ struct MarkWatchedModal: View {
                         expandedSeasons.remove(seasonNumber)
                     } else {
                         expandedSeasons.insert(seasonNumber)
+                        // Load episodes when expanding
+                        Task {
+                            await loadEpisodes(for: seasonNumber)
+                        }
                     }
                 }
             }
@@ -126,14 +142,44 @@ struct MarkWatchedModal: View {
             .background(Color(.systemGray6))
             .cornerRadius(8)
 
-            // Expanded episodes
-            if expandedSeasons.contains(seasonNumber), let episodes = getEpisodesForSeason(seasonNumber, show: show) {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(episodes, id: \.id) { episode in
-                        episodeRow(episode: episode)
+            // Toggle entire season
+            HStack {
+                Text("")
+                Button(action: {
+                    toggleSeason(seasonNumber)
+                }) {
+                    HStack {
+                        Image(systemName: "square.grid.2x2")
+                            .font(.system(size: 12))
+                        Text("All \(seasonEpisodes[seasonNumber]?.count ?? 0) episodes")
+                            .font(.caption)
                     }
+                    .foregroundColor(.blue)
                 }
-                .padding(.top, 8)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+
+            // Expanded episodes
+            if expandedSeasons.contains(seasonNumber) {
+                if loadingSeasons.contains(seasonNumber) {
+                    VStack {
+                        ProgressView()
+                            .padding()
+                    }
+                } else if let episodes = seasonEpisodes[seasonNumber], !episodes.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(episodes, id: \.id) { episode in
+                            episodeRow(episode: episode)
+                        }
+                    }
+                    .padding(.top, 8)
+                } else {
+                    Text("No episodes found")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .padding()
+                }
             }
         }
     }
@@ -167,10 +213,34 @@ struct MarkWatchedModal: View {
         .cornerRadius(6)
     }
 
-    private func getEpisodesForSeason(_ seasonNumber: Int, show: TVShowDetail) -> [Episode]? {
-        // This would need to be fetched from TMDB
-        // For now, return nil as a placeholder
-        return nil
+    private func loadEpisodes(for seasonNumber: Int) async {
+        loadingSeasons.insert(seasonNumber)
+        do {
+            let seasonDetail = try await tmdb.getTVSeason(showId: showId, seasonNumber: seasonNumber)
+            seasonEpisodes[seasonNumber] = seasonDetail.episodes
+            loadingSeasons.remove(seasonNumber)
+        } catch {
+            print("Error loading episodes for season \(seasonNumber): \(error)")
+            loadingSeasons.remove(seasonNumber)
+        }
+    }
+
+    private func toggleSeason(_ seasonNumber: Int) {
+        guard let episodes = seasonEpisodes[seasonNumber] else { return }
+        let seasonEpisodeIds = Set(episodes.map { $0.id })
+
+        // Check if all episodes in season are selected
+        let allSelected = seasonEpisodeIds.allSatisfy { selectedEpisodes.contains($0) }
+
+        if allSelected {
+            // Deselect all
+            selectedEpisodes.subtract(seasonEpisodeIds)
+            selectedSeasons.remove(seasonNumber)
+        } else {
+            // Select all
+            selectedEpisodes.formUnion(seasonEpisodeIds)
+            selectedSeasons.insert(seasonNumber)
+        }
     }
 
     private func loadShowDetails() async {
@@ -185,7 +255,7 @@ struct MarkWatchedModal: View {
 
     private func save() {
         if markAllWatched {
-            // Mark all episodes as watched - would need to fetch all episodes
+            // Mark all episodes as watched
             onSave([])
         } else {
             onSave(Array(selectedEpisodes))
