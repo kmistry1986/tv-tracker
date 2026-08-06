@@ -59,6 +59,7 @@ struct BingeFriendsTab: View {
         .background(BingeTheme.ground)
         .foregroundStyle(BingeTheme.ink)
         .navigationBarHidden(true)
+        .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: 5) }
         .safeAreaInset(edge: .bottom, spacing: 0) { BingeTabBar(selection: $tab) }
     }
 }
