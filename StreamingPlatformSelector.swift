@@ -63,24 +63,18 @@ struct PlatformButton: View {
     let platform: (id: Int, name: String, icon: String, color: Color)
     let isSelected: Bool
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: platform.icon)
-                    .font(.system(size: 20))
-                    .foregroundColor(isSelected ? .white : platform.color)
-                    .frame(width: 30)
-                
+            HStack(spacing: 12) {
                 Text(platform.name)
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .foregroundColor(isSelected ? .white : .primary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                
+
                 Spacer()
-                
+
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.white)
