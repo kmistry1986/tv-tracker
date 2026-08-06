@@ -3,7 +3,10 @@ import SwiftUI
 struct RatingView: View {
     let title: String
     let mediaType: String
-    
+    let itemId: Int
+    let isMovie: Bool
+
+    @StateObject private var supabase = SupabaseService.shared
     @State private var rating: Int = 0
     @State private var review: String = ""
     @State private var isSaving = false
@@ -94,11 +97,28 @@ struct RatingView: View {
         isSaving = true
         Task {
             defer { isSaving = false }
-            dismiss()
+
+            guard let userId = supabase.currentUser?.id else {
+                print("User not logged in")
+                return
+            }
+
+            do {
+                try await supabase.updateRating(
+                    userId: userId,
+                    itemId: itemId,
+                    rating: rating,
+                    review: review.isEmpty ? nil : review,
+                    isMovie: isMovie
+                )
+                dismiss()
+            } catch {
+                print("Error saving rating: \(error)")
+            }
         }
     }
 }
 
 #Preview {
-    RatingView(title: "Breaking Bad", mediaType: "TV Show")
+    RatingView(title: "Breaking Bad", mediaType: "TV Show", itemId: 1396, isMovie: false)
 }

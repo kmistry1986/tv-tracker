@@ -9,19 +9,39 @@ struct WatchlistView: View {
     @State private var selectedTab = 0
     @State private var searchText = ""
     @State private var errorMessage: String?
+    @State private var sortBy = "alphabetical"
+    @State private var selectedPlatform = "all"
     
     var filteredShows: [WatchlistShowWithDetails] {
-        if searchText.isEmpty {
-            return watchlistShows
-        }
-        return watchlistShows.filter { $0.showTitle.localizedCaseInsensitiveContains(searchText) }
+        let shows = searchText.isEmpty ? watchlistShows : watchlistShows.filter { $0.showTitle.localizedCaseInsensitiveContains(searchText) }
+        return sortedShows(shows)
     }
-    
+
     var filteredMovies: [WatchlistMovieWithDetails] {
-        if searchText.isEmpty {
-            return watchlistMovies
+        let movies = searchText.isEmpty ? watchlistMovies : watchlistMovies.filter { $0.movieTitle.localizedCaseInsensitiveContains(searchText) }
+        return sortedMovies(movies)
+    }
+
+    private func sortedShows(_ shows: [WatchlistShowWithDetails]) -> [WatchlistShowWithDetails] {
+        switch sortBy {
+        case "date_added_asc":
+            return shows.sorted { (a: WatchlistShowWithDetails, b: WatchlistShowWithDetails) in a.addedAt < b.addedAt }
+        case "date_added_desc":
+            return shows.sorted { (a: WatchlistShowWithDetails, b: WatchlistShowWithDetails) in a.addedAt > b.addedAt }
+        default: // alphabetical
+            return shows.sorted { $0.showTitle.localizedCaseInsensitiveCompare($1.showTitle) == .orderedAscending }
         }
-        return watchlistMovies.filter { $0.movieTitle.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    private func sortedMovies(_ movies: [WatchlistMovieWithDetails]) -> [WatchlistMovieWithDetails] {
+        switch sortBy {
+        case "date_added_asc":
+            return movies.sorted { (a: WatchlistMovieWithDetails, b: WatchlistMovieWithDetails) in a.addedAt < b.addedAt }
+        case "date_added_desc":
+            return movies.sorted { (a: WatchlistMovieWithDetails, b: WatchlistMovieWithDetails) in a.addedAt > b.addedAt }
+        default: // alphabetical
+            return movies.sorted { $0.movieTitle.localizedCaseInsensitiveCompare($1.movieTitle) == .orderedAscending }
+        }
     }
     
     var body: some View {
@@ -36,6 +56,43 @@ struct WatchlistView: View {
                     .pickerStyle(.segmented)
 
                     WatchlistSearchBar(text: $searchText)
+
+                    // Sort and Filter Controls
+                    HStack(spacing: 12) {
+                        Menu {
+                            Button(action: { sortBy = "alphabetical" }) {
+                                HStack {
+                                    Text("Alphabetical")
+                                    if sortBy == "alphabetical" { Image(systemName: "checkmark") }
+                                }
+                            }
+                            Button(action: { sortBy = "date_added_desc" }) {
+                                HStack {
+                                    Text("Date Added (Newest)")
+                                    if sortBy == "date_added_desc" { Image(systemName: "checkmark") }
+                                }
+                            }
+                            Button(action: { sortBy = "date_added_asc" }) {
+                                HStack {
+                                    Text("Date Added (Oldest)")
+                                    if sortBy == "date_added_asc" { Image(systemName: "checkmark") }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.up.arrow.down")
+                                    .font(.system(size: 14))
+                                Text("Sort")
+                                    .font(.caption)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(6)
+                        }
+
+                        Spacer()
+                    }
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 10)

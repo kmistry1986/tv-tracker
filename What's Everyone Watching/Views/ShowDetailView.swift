@@ -233,7 +233,7 @@ struct ShowDetailView: View {
                 Text("You've finished watching. Would you like to rate this show?")
             }
             .sheet(isPresented: $showRatingModal) {
-                RatingView(title: showTitle, mediaType: "tv")
+                RatingView(title: showTitle, mediaType: "tv", itemId: showId, isMovie: false)
             }
         }
     }
@@ -311,7 +311,7 @@ struct ShowDetailView: View {
         Task {
             do {
                 guard let userId = supabase.currentUser?.id else { return }
-                try await supabase.updateShowRating(showId: showId, userId: userId, rating: newRating)
+                try await supabase.updateRating(userId: userId, itemId: showId, rating: newRating, isMovie: false)
             } catch {
                 print("Error updating rating: \(error)")
                 // Revert rating on error

@@ -203,8 +203,8 @@ struct LibraryView: View {
                 }
             }
             .sheet(isPresented: $showRatingModal) {
-                if let (_, title, isMovie) = selectedShowForRating {
-                    RatingView(title: title, mediaType: isMovie ? "Movie" : "TV Show")
+                if let (itemId, title, isMovie) = selectedShowForRating {
+                    RatingView(title: title, mediaType: isMovie ? "movie" : "tv", itemId: itemId, isMovie: isMovie)
                 }
             }
             .alert("Remove from Library?", isPresented: $showRemoveConfirmation) {

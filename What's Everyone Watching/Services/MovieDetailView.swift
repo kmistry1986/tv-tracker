@@ -84,7 +84,7 @@ struct MovieDetailView: View {
             Text("Mark this movie as watched?")
         }
         .sheet(isPresented: $showRatingModal) {
-            RatingView(title: movie?.title ?? "Movie", mediaType: "Movie")
+            RatingView(title: movie?.title ?? "Movie", mediaType: "movie", itemId: movieId, isMovie: true)
         }
         .sheet(isPresented: $showWatchlistModal) {
             WatchlistPriorityModal(showTitle: movie?.title ?? "Movie", isMovie: true) { priority, notes in

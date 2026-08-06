@@ -437,11 +437,14 @@ class SupabaseService: NSObject, ObservableObject {
         try await delete(endpoint: endpoint)
     }
 
-    func updateShowRating(showId: Int, userId: String, rating: Int) async throws {
-        let endpoint = "\(supabaseURL)/rest/v1/user_shows?show_id=eq.\(showId)&user_id=eq.\(userId)"
+    func updateRating(userId: String, itemId: Int, rating: Int, review: String? = nil, isMovie: Bool) async throws {
+        let table = isMovie ? "user_movies" : "user_shows"
+        let idColumn = isMovie ? "movie_id" : "show_id"
+        let endpoint = "\(supabaseURL)/rest/v1/\(table)?\(idColumn)=eq.\(itemId)&user_id=eq.\(userId)"
 
         struct UpdateBody: Encodable {
             let rating: Int
+            let review: String?
         }
 
         var request = URLRequest(url: URL(string: endpoint)!)
@@ -452,7 +455,7 @@ class SupabaseService: NSObject, ObservableObject {
             request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
         }
 
-        let body = UpdateBody(rating: rating)
+        let body = UpdateBody(rating: rating, review: review)
         request.httpBody = try JSONEncoder().encode(body)
 
         let (_, response) = try await URLSession.shared.data(for: request)

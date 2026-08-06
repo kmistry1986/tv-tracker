@@ -79,7 +79,7 @@ struct TVShowDetailView: View {
             }
         }
         .sheet(isPresented: $showRatingModal) {
-            RatingView(title: show?.name ?? "Show", mediaType: "TV Show")
+            RatingView(title: show?.name ?? "Show", mediaType: "tv", itemId: showId, isMovie: false)
         }
         .sheet(isPresented: $showWatchlistModal) {
             WatchlistPriorityModal(showTitle: show?.name ?? "Show", isMovie: false) { priority, notes in

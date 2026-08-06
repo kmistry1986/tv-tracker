@@ -6,9 +6,12 @@ struct HomeView: View {
     @State private var trendingShows: [SearchResult] = []
     @State private var trendingMovies: [SearchResult] = []
     @State private var partiallyWatchedShows: [LibraryShowWithDetails] = []
-    @State private var libraryCount = 0
-    @State private var watchlistCount = 0
+    @State private var libraryShowCount = 0
+    @State private var libraryMovieCount = 0
+    @State private var watchlistShowCount = 0
+    @State private var watchlistMovieCount = 0
     @State private var ratedCount = 0
+    @State private var totalLibraryCount = 0
     @State private var isLoading = false
     @State private var showSearchOverlay = false
 
@@ -257,9 +260,116 @@ struct HomeView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: 12) {
-                StatCard(icon: "tv.fill", title: "Shows", value: String(libraryCount), color: .blue)
-                StatCard(icon: "bookmark.fill", title: "Watchlist", value: String(watchlistCount), color: .green)
-                StatCard(icon: "star.fill", title: "Rated", value: String(ratedCount), color: .orange)
+                // Library Card
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "books.vertical.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.blue)
+                        Text("Library")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Spacer()
+                    }
+
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Shows")
+                                .font(.caption2)
+                                .foregroundColor(.gray)
+                            Text(String(libraryShowCount))
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                        }
+                        Divider()
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Movies")
+                                .font(.caption2)
+                                .foregroundColor(.gray)
+                            Text(String(libraryMovieCount))
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                        }
+                        Spacer()
+                    }
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
+
+                // Watchlist Card
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "bookmark.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.green)
+                        Text("Watchlist")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Spacer()
+                    }
+
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Shows")
+                                .font(.caption2)
+                                .foregroundColor(.gray)
+                            Text(String(watchlistShowCount))
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                        }
+                        Divider()
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Movies")
+                                .font(.caption2)
+                                .foregroundColor(.gray)
+                            Text(String(watchlistMovieCount))
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                        }
+                        Spacer()
+                    }
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
+
+                // Ratings Card
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.orange)
+                        Text("Ratings")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Spacer()
+                    }
+
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Rated")
+                                .font(.caption2)
+                                .foregroundColor(.gray)
+                            Text(String(ratedCount))
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                        }
+                        Divider()
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Complete")
+                                .font(.caption2)
+                                .foregroundColor(.gray)
+                            Text(totalLibraryCount > 0 ? "\(Int(Double(ratedCount) / Double(totalLibraryCount) * 100))%" : "0%")
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                        }
+                        Spacer()
+                    }
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
             }
         }
     }
@@ -295,8 +405,11 @@ struct HomeView: View {
                 print("📊 Shows IDs: \(userShows.map { $0.showId })")
                 print("📊 Movie IDs: \(userMovies.map { $0.movieId })")
 
-                libraryCount = userShows.count + userMovies.count
-                watchlistCount = watchlistShows.count + watchlistMovies.count
+                libraryShowCount = userShows.count
+                libraryMovieCount = userMovies.count
+                watchlistShowCount = watchlistShows.count
+                watchlistMovieCount = watchlistMovies.count
+                totalLibraryCount = userShows.count + userMovies.count
                 ratedCount = (userShows.filter { $0.rating != nil }.count) + (userMovies.filter { $0.rating != nil }.count)
             } catch {
                 print("Error loading stats: \(error)")
@@ -640,7 +753,126 @@ struct HomeSearchResultRow: View {
     }
 }
 
-#Preview {
-    HomeView()
-        .environmentObject(SupabaseService.shared)
+#Preview("Stats Cards") {
+    VStack(spacing: 12) {
+        Text("Your Stats")
+            .font(.headline)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+        HStack(spacing: 12) {
+            // Library Card
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "books.vertical.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(.blue)
+                    Text("Library")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    Spacer()
+                }
+
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Shows")
+                            .font(.caption2)
+                            .foregroundColor(.gray)
+                        Text("8")
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                    }
+                    Divider()
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Movies")
+                            .font(.caption2)
+                            .foregroundColor(.gray)
+                        Text("5")
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                    }
+                    Spacer()
+                }
+            }
+            .padding()
+            .background(Color(.systemGray6))
+            .cornerRadius(8)
+
+            // Watchlist Card
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "bookmark.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(.green)
+                    Text("Watchlist")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    Spacer()
+                }
+
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Shows")
+                            .font(.caption2)
+                            .foregroundColor(.gray)
+                        Text("12")
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                    }
+                    Divider()
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Movies")
+                            .font(.caption2)
+                            .foregroundColor(.gray)
+                        Text("6")
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                    }
+                    Spacer()
+                }
+            }
+            .padding()
+            .background(Color(.systemGray6))
+            .cornerRadius(8)
+
+            // Ratings Card
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(.orange)
+                    Text("Ratings")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    Spacer()
+                }
+
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Rated")
+                            .font(.caption2)
+                            .foregroundColor(.gray)
+                        Text("4")
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                    }
+                    Divider()
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Complete")
+                            .font(.caption2)
+                            .foregroundColor(.gray)
+                        Text("23%")
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                    }
+                    Spacer()
+                }
+            }
+            .padding()
+            .background(Color(.systemGray6))
+            .cornerRadius(8)
+        }
+    }
+    .padding()
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(Color(.systemBackground))
 }

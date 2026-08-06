@@ -323,7 +323,9 @@ struct SearchDetailView: View {
                 Text("Add this \(result.mediaType == "tv" ? "show" : "movie") to your library?")
             }
             .sheet(isPresented: $showRatingModal) {
-                RatingView(title: result.displayTitle, mediaType: result.mediaType)
+                if let itemId = result.id {
+                    RatingView(title: result.displayTitle, mediaType: result.mediaType, itemId: itemId, isMovie: result.mediaType == "movie")
+                }
             }
             .onAppear {
                 loadWatchProviders()
