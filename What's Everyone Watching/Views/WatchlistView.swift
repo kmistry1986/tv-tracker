@@ -38,7 +38,7 @@ struct WatchlistView: View {
                     WatchlistSearchBar(text: $searchText)
                 }
                 .padding()
-                .safeAreaPadding(.top, 10)
+                .padding(.top, -10)
                 
                 if let errorMessage = errorMessage {
                     VStack(spacing: 12) {
@@ -385,9 +385,9 @@ struct WatchlistSearchBar: View {
         HStack {
             Image(systemName: "magnifyingglass")
                 .foregroundColor(.gray)
-            
+
             TextField("Search watchlist", text: $text)
-            
+
             if !text.isEmpty {
                 Button(action: { text = "" }) {
                     Image(systemName: "xmark.circle.fill")
@@ -395,7 +395,8 @@ struct WatchlistSearchBar: View {
                 }
             }
         }
-        .padding(8)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .background(Color.gray.opacity(0.15))
         .cornerRadius(20)
     }

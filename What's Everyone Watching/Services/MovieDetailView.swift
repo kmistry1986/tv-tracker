@@ -147,19 +147,25 @@ struct MovieDetailView: View {
                 Button(action: {
                     // TODO: Add to library
                 }) {
-                    Label("Add to Library", systemImage: "books.vertical.fill")
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
+                    VStack(spacing: 4) {
+                        Image(systemName: "books.vertical.fill")
+                            .font(.system(size: 14))
+                        Text("Add to\nLibrary")
+                            .font(.caption2)
+                            .lineLimit(2)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(8)
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
                 }
 
                 if isInLibrary {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 18))
+                        .font(.system(size: 16))
                         .foregroundColor(.green)
-                        .offset(x: 8, y: -8)
+                        .offset(x: 6, y: -6)
                 }
             }
 
@@ -167,19 +173,25 @@ struct MovieDetailView: View {
                 Button(action: {
                     // TODO: Add to watchlist
                 }) {
-                    Label("Add to Watchlist", systemImage: "bookmark.fill")
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.green)
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
+                    VStack(spacing: 4) {
+                        Image(systemName: "bookmark.fill")
+                            .font(.system(size: 14))
+                        Text("Add to\nWatchlist")
+                            .font(.caption2)
+                            .lineLimit(2)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(8)
+                    .background(Color.green)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
                 }
 
                 if isInWatchlist {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 18))
+                        .font(.system(size: 16))
                         .foregroundColor(.green)
-                        .offset(x: 8, y: -8)
+                        .offset(x: 6, y: -6)
                 }
             }
 
@@ -187,19 +199,25 @@ struct MovieDetailView: View {
                 Button(action: {
                     // TODO: Rate movie
                 }) {
-                    Label("Rate This Movie", systemImage: "star.fill")
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.orange)
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
+                    VStack(spacing: 4) {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 14))
+                        Text("Rate This\nMovie")
+                            .font(.caption2)
+                            .lineLimit(2)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(8)
+                    .background(Color.orange)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
                 }
 
                 if hasRating {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 18))
+                        .font(.system(size: 16))
                         .foregroundColor(.green)
-                        .offset(x: 8, y: -8)
+                        .offset(x: 6, y: -6)
                 }
             }
         }

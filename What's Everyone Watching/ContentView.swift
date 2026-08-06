@@ -99,7 +99,7 @@ struct ProfileView: View {
                         .foregroundColor(.gray)
                 }
                 .padding()
-                .safeAreaPadding(.top, 10)
+                .padding(.top, -10)
 
                 Divider()
 

@@ -6,7 +6,7 @@ struct LibraryView: View {
     @State private var libraryShows: [LibraryShowWithDetails] = []
     @State private var libraryMovies: [LibraryMovieWithDetails] = []
     @State private var isLoading = false
-    @State private var selectedTab = 0
+    @State private var selectedTab = 2
     @State private var errorMessage: String?
     @State private var lastRefreshTime = Date()
     @State private var searchText = ""
@@ -37,15 +37,14 @@ struct LibraryView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding()
-                .safeAreaPadding(.top, 10)
+                .padding(.top, -10)
                 
                 // Search bar
                 HStack {
                     Image(systemName: "magnifyingglass")
                         .foregroundColor(.gray)
                     TextField("Search library...", text: $searchText)
-                        .textFieldStyle(PlainTextFieldStyle())
-                    
+
                     if !searchText.isEmpty {
                         Button(action: { searchText = "" }) {
                             Image(systemName: "xmark.circle.fill")
@@ -53,7 +52,8 @@ struct LibraryView: View {
                         }
                     }
                 }
-                .padding(8)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
                 .background(Color(.systemGray6))
                 .cornerRadius(20)
                 .padding(.horizontal)
@@ -168,7 +168,7 @@ struct LibraryView: View {
                                         }
 
                                         if let releaseDate = show.firstAirDate, !releaseDate.isEmpty {
-                                            Text("Released: \(releaseDate.prefix(4))")
+                                            Text("Released: \(formatReleaseDate(releaseDate))")
                                                 .font(.caption)
                                                 .foregroundColor(.gray)
                                         }
@@ -395,7 +395,7 @@ struct LibraryView: View {
                                             }
 
                                             if let releaseDate = show.firstAirDate, !releaseDate.isEmpty {
-                                                Text("Released: \(releaseDate.prefix(4))")
+                                                Text("Released: \(formatReleaseDate(releaseDate))")
                                                     .font(.caption)
                                                     .foregroundColor(.gray)
                                             }
@@ -444,7 +444,7 @@ struct LibraryView: View {
                                             }
 
                                             if let releaseDate = movie.releaseDate, !releaseDate.isEmpty {
-                                                Text("Released: \(releaseDate.prefix(4))")
+                                                Text("Released: \(formatReleaseDate(releaseDate))")
                                                     .font(.caption)
                                                     .foregroundColor(.gray)
                                             }
@@ -653,7 +653,18 @@ struct LibraryView: View {
         let formatter = ISO8601DateFormatter()
         if let date = formatter.date(from: dateStr) {
             let displayFormatter = DateFormatter()
-            displayFormatter.dateStyle = .medium
+            displayFormatter.dateFormat = "M/d/yyyy"
+            return displayFormatter.string(from: date)
+        }
+        return dateStr
+    }
+
+    private func formatReleaseDate(_ dateStr: String?) -> String {
+        guard let dateStr = dateStr, !dateStr.isEmpty else { return "" }
+        let formatter = ISO8601DateFormatter()
+        if let date = formatter.date(from: dateStr) {
+            let displayFormatter = DateFormatter()
+            displayFormatter.dateFormat = "M/d/yyyy"
             return displayFormatter.string(from: date)
         }
         return dateStr

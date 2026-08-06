@@ -58,30 +58,30 @@ struct WatchProvidersView: View {
                     Text("Stream")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                    
-                    providerLogos(providers: providers.streamingProviders)
+
+                    providerLogos(providers: providers.streamingProviders, showBadges: true)
                 }
             }
-            
+
             // Buy Options
             if let buyProviders = providers.buy, !buyProviders.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Buy")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                    
-                    providerLogos(providers: buyProviders)
+
+                    providerLogos(providers: buyProviders, showBadges: false)
                 }
             }
-            
+
             // Rent Options
             if let rentProviders = providers.rent, !rentProviders.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Rent")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                    
-                    providerLogos(providers: rentProviders)
+
+                    providerLogos(providers: rentProviders, showBadges: false)
                 }
             }
             
@@ -109,7 +109,7 @@ struct WatchProvidersView: View {
         .cornerRadius(12)
     }
     
-    private func providerLogos(providers: [WatchProvider]) -> some View {
+    private func providerLogos(providers: [WatchProvider], showBadges: Bool = true) -> some View {
         let deduplicatedProviders = deduplicateProviders(providers)
         let mappedProviders = deduplicatedProviders.filter { provider in
             StreamingPlatformMapper.isUserSubscribedTo(providerName: provider.providerName, userDisplayNames: [])
@@ -153,8 +153,8 @@ struct WatchProvidersView: View {
                             .frame(width: 50, height: 50)
                             .cornerRadius(8)
 
-                            // Subscription status badge
-                            if !userPlatforms.isEmpty {
+                            // Subscription status badge (only for streaming services)
+                            if showBadges && !userPlatforms.isEmpty {
                                 Image(systemName: isUserSubscribedTo(provider: provider) ? "checkmark.circle.fill" : "xmark.circle.fill")
                                     .font(.system(size: 18))
                                     .foregroundColor(isUserSubscribedTo(provider: provider) ? .green : .red)
