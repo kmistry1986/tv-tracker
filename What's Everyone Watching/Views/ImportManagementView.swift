@@ -494,8 +494,11 @@ struct NetflixImportView: View {
 
                                         do {
                                             try await supabase.insertEpisode(episode: tmdbEpisode)
+                                            if isWatched {
+                                                print("✅ Inserted watched episode S\(episodeDetail.seasonNumber)E\(episodeDetail.episodeNumber): \(episodeDetail.name)")
+                                            }
                                         } catch {
-                                            print("⚠️ Could not insert episode: \(error)")
+                                            print("⚠️ Could not insert episode S\(episodeDetail.seasonNumber)E\(episodeDetail.episodeNumber): \(error)")
                                         }
                                     }
                                 }
