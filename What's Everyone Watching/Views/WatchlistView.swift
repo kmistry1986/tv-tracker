@@ -397,7 +397,7 @@ struct WatchlistSearchBar: View {
         }
         .padding(8)
         .background(Color.gray.opacity(0.15))
-        .cornerRadius(8)
+        .cornerRadius(20)
     }
 }
 

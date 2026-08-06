@@ -55,7 +55,7 @@ struct LibraryView: View {
                 }
                 .padding(8)
                 .background(Color(.systemGray6))
-                .cornerRadius(10)
+                .cornerRadius(20)
                 .padding(.horizontal)
                 .padding(.bottom, 8)
                 
