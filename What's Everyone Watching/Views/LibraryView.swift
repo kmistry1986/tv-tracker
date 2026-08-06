@@ -37,13 +37,14 @@ struct LibraryView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding()
-                .padding(.top, -10)
+                .padding(.top, 10)
                 
                 // Search bar
                 HStack {
                     Image(systemName: "magnifyingglass")
                         .foregroundColor(.gray)
                     TextField("Search library...", text: $searchText)
+                        .textFieldStyle(.plain)
 
                     if !searchText.isEmpty {
                         Button(action: { searchText = "" }) {

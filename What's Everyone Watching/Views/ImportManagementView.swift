@@ -13,7 +13,7 @@ struct ImportManagementView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding()
-                .padding(.top, -10)
+                .padding(.top, 10)
 
                 if selectedTab == 0 {
                     NetflixImportView()

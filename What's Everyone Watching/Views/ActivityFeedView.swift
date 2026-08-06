@@ -30,7 +30,7 @@ struct ActivityFeedView: View {
                 }
             }
             .navigationTitle("Activity Feed")
-            .padding(.top, -10)
+            .padding(.top, 10)
             .refreshable {
                 await loadFeed()
             }

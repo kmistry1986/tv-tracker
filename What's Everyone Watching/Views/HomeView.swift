@@ -23,7 +23,7 @@ struct HomeView: View {
                         if !showSearchOverlay {
                             searchButtonSection
                                 .padding(.horizontal)
-                                .padding(.top, 8)
+                                .padding(.top, 10)
                         }
 
                         // Search results expand below the bar
@@ -33,7 +33,6 @@ struct HomeView: View {
                     }
                     .background(Color(.systemBackground))
                     .zIndex(1)
-                    .padding(.top, -10)
                     
                     // Main content (hidden when searching)
                     if !showSearchOverlay {

@@ -147,15 +147,21 @@ struct MovieDetailView: View {
                 Button(action: {
                     // TODO: Add to library
                 }) {
-                    VStack(spacing: 4) {
+                    HStack(spacing: 6) {
                         Image(systemName: "books.vertical.fill")
-                            .font(.system(size: 14))
-                        Text("Add to\nLibrary")
-                            .font(.caption2)
-                            .lineLimit(2)
+                            .font(.system(size: 12))
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("Add to")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                            Text("Library")
+                                .font(.caption2)
+                        }
+                        Spacer()
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(8)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
                     .background(Color.blue)
                     .foregroundColor(.white)
                     .cornerRadius(10)
@@ -173,15 +179,21 @@ struct MovieDetailView: View {
                 Button(action: {
                     // TODO: Add to watchlist
                 }) {
-                    VStack(spacing: 4) {
+                    HStack(spacing: 6) {
                         Image(systemName: "bookmark.fill")
-                            .font(.system(size: 14))
-                        Text("Add to\nWatchlist")
-                            .font(.caption2)
-                            .lineLimit(2)
+                            .font(.system(size: 12))
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("Add to")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                            Text("Watchlist")
+                                .font(.caption2)
+                        }
+                        Spacer()
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(8)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
                     .background(Color.green)
                     .foregroundColor(.white)
                     .cornerRadius(10)
@@ -199,15 +211,21 @@ struct MovieDetailView: View {
                 Button(action: {
                     // TODO: Rate movie
                 }) {
-                    VStack(spacing: 4) {
+                    HStack(spacing: 6) {
                         Image(systemName: "star.fill")
-                            .font(.system(size: 14))
-                        Text("Rate This\nMovie")
-                            .font(.caption2)
-                            .lineLimit(2)
+                            .font(.system(size: 12))
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("Rate")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                            Text("Movie")
+                                .font(.caption2)
+                        }
+                        Spacer()
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(8)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
                     .background(Color.orange)
                     .foregroundColor(.white)
                     .cornerRadius(10)

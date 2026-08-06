@@ -38,7 +38,7 @@ struct WatchlistView: View {
                     WatchlistSearchBar(text: $searchText)
                 }
                 .padding()
-                .padding(.top, -10)
+                .padding(.top, 10)
                 
                 if let errorMessage = errorMessage {
                     VStack(spacing: 12) {
@@ -387,6 +387,7 @@ struct WatchlistSearchBar: View {
                 .foregroundColor(.gray)
 
             TextField("Search watchlist", text: $text)
+                .textFieldStyle(.plain)
 
             if !text.isEmpty {
                 Button(action: { text = "" }) {
