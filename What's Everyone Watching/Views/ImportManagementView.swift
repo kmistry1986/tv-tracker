@@ -519,6 +519,12 @@ struct NetflixImportView: View {
                         }
 
                         if let firstResult = searchResults.first {
+                            guard let userId = supabase.currentUser?.id else {
+                                newFailedImports.append(FailedImport(title: entry.title, timestamp: now))
+                                importProgress = index + 1
+                                continue
+                            }
+
                             let movie = Movie(
                                 id: firstResult.id,
                                 tmdbId: firstResult.id,
@@ -528,6 +534,7 @@ struct NetflixImportView: View {
                                 releaseDate: firstResult.releaseDate
                             )
                             try await supabase.insertMovie(movie: movie)
+                            try await supabase.insertUserMovie(userId: userId, movieId: firstResult.id, watchedDate: entry.date)
                             successCount += 1
                         } else {
                             newFailedImports.append(FailedImport(title: entry.title, timestamp: now))

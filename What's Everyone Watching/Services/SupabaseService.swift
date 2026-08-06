@@ -427,6 +427,25 @@ class SupabaseService: NSObject, ObservableObject {
         }
     }
 
+    func insertUserMovie(userId: String, movieId: Int, watchedDate: String) async throws {
+        let endpoint = "\(supabaseURL)/rest/v1/user_movies"
+
+        struct UserMovieInsert: Encodable {
+            let user_id: String
+            let movie_id: Int
+            let watched_date: String
+            let created_at: String
+        }
+
+        let body = UserMovieInsert(
+            user_id: userId,
+            movie_id: movieId,
+            watched_date: watchedDate,
+            created_at: ISO8601DateFormatter().string(from: Date())
+        )
+        try await insert(endpoint: endpoint, body: body)
+    }
+
     func removeUserMovie(id: Int) async throws {
         let endpoint = "\(supabaseURL)/rest/v1/user_movies?id=eq.\(id)"
         try await delete(endpoint: endpoint)
