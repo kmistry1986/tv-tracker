@@ -161,21 +161,18 @@ struct TVShowDetailView: View {
                 Button(action: {
                     // TODO: Add to library
                 }) {
-                    HStack(spacing: 6) {
+                    VStack(spacing: 2) {
                         Image(systemName: "books.vertical.fill")
                             .font(.system(size: 12))
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text("Add to")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                            Text("Library")
-                                .font(.caption2)
-                        }
-                        Spacer()
+                        Text("Add to")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                        Text("Library")
+                            .font(.caption2)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
                     .background(Color.blue)
                     .foregroundColor(.white)
                     .cornerRadius(10)
@@ -193,21 +190,18 @@ struct TVShowDetailView: View {
                 Button(action: {
                     // TODO: Add to watchlist
                 }) {
-                    HStack(spacing: 6) {
+                    VStack(spacing: 2) {
                         Image(systemName: "bookmark.fill")
                             .font(.system(size: 12))
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text("Add to")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                            Text("Watchlist")
-                                .font(.caption2)
-                        }
-                        Spacer()
+                        Text("Add to")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                        Text("Watchlist")
+                            .font(.caption2)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
                     .background(Color.green)
                     .foregroundColor(.white)
                     .cornerRadius(10)
@@ -225,21 +219,18 @@ struct TVShowDetailView: View {
                 Button(action: {
                     // TODO: Rate show
                 }) {
-                    HStack(spacing: 6) {
+                    VStack(spacing: 2) {
                         Image(systemName: "star.fill")
                             .font(.system(size: 12))
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text("Rate")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                            Text("Show")
-                                .font(.caption2)
-                        }
-                        Spacer()
+                        Text("Rate")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                        Text("Show")
+                            .font(.caption2)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
                     .background(Color.orange)
                     .foregroundColor(.white)
                     .cornerRadius(10)

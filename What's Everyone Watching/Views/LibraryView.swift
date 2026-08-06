@@ -45,6 +45,7 @@ struct LibraryView: View {
                         .foregroundColor(.gray)
                     TextField("Search library...", text: $searchText)
                         .textFieldStyle(.plain)
+                        .padding(0)
 
                     if !searchText.isEmpty {
                         Button(action: { searchText = "" }) {
@@ -56,7 +57,7 @@ struct LibraryView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(Color(.systemGray6))
-                .cornerRadius(20)
+                .clipShape(RoundedRectangle(cornerRadius: 20))
                 .padding(.horizontal)
                 .padding(.bottom, 8)
                 

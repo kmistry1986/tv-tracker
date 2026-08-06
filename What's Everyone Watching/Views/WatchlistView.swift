@@ -388,6 +388,7 @@ struct WatchlistSearchBar: View {
 
             TextField("Search watchlist", text: $text)
                 .textFieldStyle(.plain)
+                .padding(0)
 
             if !text.isEmpty {
                 Button(action: { text = "" }) {
@@ -399,7 +400,7 @@ struct WatchlistSearchBar: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(Color.gray.opacity(0.15))
-        .cornerRadius(20)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
     }
 }
 
