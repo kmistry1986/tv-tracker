@@ -304,13 +304,47 @@ class SupabaseService: NSObject, ObservableObject {
         if statusCode == 201 {
             return
         } else if statusCode == 409 {
-            print("⚠️ Duplicate episode - skipping")
+            // Episode already exists - update it if marked as watched
+            if episode.watched {
+                print("⚠️ Duplicate episode - updating watched status")
+                try await updateEpisodeWatched(episodeId: episode.id, watched: true, watchedAt: episode.watchedAt, userId: episode.userId)
+            } else {
+                print("⚠️ Duplicate episode - skipping")
+            }
             return
         } else if statusCode == 401 {
             print("⚠️ Episode insert blocked by RLS policy - skipping")
             return
         } else {
             throw NSError(domain: "API", code: -1, userInfo: [NSLocalizedDescriptionKey: "Episode insert failed with status \(statusCode): \(responseBody)"])
+        }
+    }
+
+    private func updateEpisodeWatched(episodeId: Int, watched: Bool, watchedAt: String?, userId: String?) async throws {
+        let endpoint = "\(supabaseURL)/rest/v1/episodes?id=eq.\(episodeId)&user_id=eq.\(userId ?? "")"
+        var request = URLRequest(url: URL(string: endpoint)!)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        if !authToken.isEmpty {
+            request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
+
+        struct UpdatePayload: Encodable {
+            let watched: Bool
+            let watched_at: String?
+        }
+
+        let payload = UpdatePayload(watched: watched, watched_at: watchedAt)
+        request.httpBody = try JSONEncoder().encode(payload)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+
+        if statusCode == 200 {
+            print("✅ Updated episode watched status for id=\(episodeId)")
+        } else {
+            print("⚠️ Failed to update episode \(episodeId): status=\(statusCode)")
         }
     }
 
