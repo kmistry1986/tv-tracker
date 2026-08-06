@@ -34,10 +34,11 @@ struct WatchlistView: View {
                         Text("Movies").tag(2)
                     }
                     .pickerStyle(.segmented)
-                    
+
                     WatchlistSearchBar(text: $searchText)
                 }
                 .padding()
+                .safeAreaPadding(.top, 10)
                 
                 if let errorMessage = errorMessage {
                     VStack(spacing: 12) {

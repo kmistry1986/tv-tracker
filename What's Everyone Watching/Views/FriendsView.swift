@@ -17,6 +17,7 @@ struct FriendsView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding()
+                .safeAreaPadding(.top, 10)
 
                 if isLoading {
                     VStack {

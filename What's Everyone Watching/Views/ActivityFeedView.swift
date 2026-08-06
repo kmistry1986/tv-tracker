@@ -15,10 +15,10 @@ struct ActivityFeedView: View {
                         Image(systemName: "sparkles")
                             .font(.system(size: 40))
                             .foregroundColor(.gray)
-                        
+
                         Text("No Activity Yet")
                             .font(.headline)
-                        
+
                         Text("Follow friends to see their watching activity")
                             .font(.caption)
                             .foregroundColor(.gray)
@@ -30,6 +30,7 @@ struct ActivityFeedView: View {
                 }
             }
             .navigationTitle("Activity Feed")
+            .safeAreaPadding(.top, 10)
             .refreshable {
                 await loadFeed()
             }

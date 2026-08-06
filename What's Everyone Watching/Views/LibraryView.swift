@@ -31,11 +31,13 @@ struct LibraryView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 Picker("", selection: $selectedTab) {
+                    Text("All").tag(2)
                     Text("Shows").tag(0)
                     Text("Movies").tag(1)
                 }
                 .pickerStyle(.segmented)
                 .padding()
+                .safeAreaPadding(.top, 10)
                 
                 // Search bar
                 HStack {
@@ -90,8 +92,10 @@ struct LibraryView: View {
                     }
                 } else if selectedTab == 0 {
                     showsList
-                } else {
+                } else if selectedTab == 1 {
                     moviesList
+                } else {
+                    allItemsList
                 }
             }
             .navigationTitle("My Library")
@@ -326,7 +330,137 @@ struct LibraryView: View {
             }
         }
     }
-    
+
+    private var allItemsList: some View {
+        Group {
+            if (filteredShows.isEmpty && filteredMovies.isEmpty) && !searchText.isEmpty {
+                VStack {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 50))
+                        .foregroundColor(.gray)
+                        .padding()
+                    Text("No items found")
+                        .foregroundColor(.gray)
+                    Spacer()
+                }
+                .padding(.top, 50)
+            } else if libraryShows.isEmpty && libraryMovies.isEmpty {
+                VStack {
+                    Text("No items watched yet")
+                        .foregroundColor(.gray)
+                    Spacer()
+                }
+                .padding()
+            } else {
+                List {
+                    // Shows section
+                    if !filteredShows.isEmpty {
+                        Section(header: Text("Shows")) {
+                            ForEach(filteredShows, id: \.id) { show in
+                                NavigationLink(destination: ShowDetailView(showId: show.showId, showTitle: show.showTitle)) {
+                                    HStack(spacing: 12) {
+                                        if let imageUrl = show.posterUrl, let url = URL(string: imageUrl) {
+                                            AsyncImage(url: url) { image in
+                                                image
+                                                    .resizable()
+                                                    .scaledToFill()
+                                            } placeholder: {
+                                                Color.gray
+                                            }
+                                            .frame(width: 50, height: 75)
+                                            .cornerRadius(4)
+                                        } else {
+                                            Color.gray
+                                                .frame(width: 50, height: 75)
+                                                .cornerRadius(4)
+                                        }
+
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(show.showTitle)
+                                                .fontWeight(.semibold)
+
+                                            HStack(spacing: 12) {
+                                                if let rating = show.rating {
+                                                    HStack(spacing: 2) {
+                                                        Image(systemName: "star.fill")
+                                                            .foregroundColor(.orange)
+                                                        Text("\(rating)")
+                                                            .font(.caption)
+                                                    }
+                                                }
+
+                                                Text("\(show.watchedEpisodes)/\(show.totalEpisodes)")
+                                                    .font(.caption)
+                                                    .foregroundColor(.gray)
+                                            }
+
+                                            if let releaseDate = show.firstAirDate, !releaseDate.isEmpty {
+                                                Text("Released: \(releaseDate.prefix(4))")
+                                                    .font(.caption)
+                                                    .foregroundColor(.gray)
+                                            }
+                                        }
+                                        Spacer()
+                                    }
+                                    .padding(.vertical, 8)
+                                }
+                            }
+                        }
+                    }
+
+                    // Movies section
+                    if !filteredMovies.isEmpty {
+                        Section(header: Text("Movies")) {
+                            ForEach(filteredMovies, id: \.id) { movie in
+                                HStack(spacing: 12) {
+                                    if let imageUrl = movie.posterUrl, let url = URL(string: imageUrl) {
+                                        AsyncImage(url: url) { image in
+                                            image
+                                                .resizable()
+                                                .scaledToFill()
+                                        } placeholder: {
+                                            Color.gray
+                                        }
+                                        .frame(width: 50, height: 75)
+                                        .cornerRadius(4)
+                                    } else {
+                                        Color.gray
+                                            .frame(width: 50, height: 75)
+                                            .cornerRadius(4)
+                                    }
+
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(movie.movieTitle)
+                                            .fontWeight(.semibold)
+
+                                        HStack(spacing: 12) {
+                                            if let rating = movie.rating {
+                                                HStack(spacing: 2) {
+                                                    Image(systemName: "star.fill")
+                                                        .foregroundColor(.orange)
+                                                    Text("\(rating)")
+                                                        .font(.caption)
+                                                }
+                                            }
+
+                                            if let releaseDate = movie.releaseDate, !releaseDate.isEmpty {
+                                                Text("Released: \(releaseDate.prefix(4))")
+                                                    .font(.caption)
+                                                    .foregroundColor(.gray)
+                                            }
+                                        }
+                                    }
+                                    Spacer()
+                                }
+                                .padding(.vertical, 8)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private func loadLibrary() {
         guard let userId = supabase.currentUser?.id else {
             errorMessage = "User not logged in"

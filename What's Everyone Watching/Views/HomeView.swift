@@ -33,6 +33,7 @@ struct HomeView: View {
                     }
                     .background(Color(.systemBackground))
                     .zIndex(1)
+                    .safeAreaPadding(.top, 10)
                     
                     // Main content (hidden when searching)
                     if !showSearchOverlay {
