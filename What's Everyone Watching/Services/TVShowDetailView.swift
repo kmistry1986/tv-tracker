@@ -13,7 +13,8 @@ struct TVShowDetailView: View {
     @State private var isInLibrary = false
     @State private var isInWatchlist = false
     @State private var hasRating = false
-    
+    @State private var showMarkWatchedModal = false
+
     var body: some View {
         ScrollView {
             if isLoading {
@@ -69,6 +70,12 @@ struct TVShowDetailView: View {
         .task {
             await loadShowDetails()
             loadUserPlatforms()
+        }
+        .sheet(isPresented: $showMarkWatchedModal) {
+            MarkWatchedModal(showId: showId, showTitle: show?.name ?? "Show") { selectedEpisodeIds in
+                // Handle selected episodes
+                print("Selected episodes: \(selectedEpisodeIds)")
+            }
         }
     }
     
@@ -286,15 +293,7 @@ struct TVShowDetailView: View {
     }
 
     private func addToLibrary() {
-        guard let userId = supabase.currentUser?.id else { return }
-        Task {
-            do {
-                try await supabase.insertUserShow(userId: userId, showId: showId, watchedDate: ISO8601DateFormatter().string(from: Date()))
-                isInLibrary = true
-            } catch {
-                print("Error adding to library: \(error)")
-            }
-        }
+        showMarkWatchedModal = true
     }
 
     private func addToWatchlist() {

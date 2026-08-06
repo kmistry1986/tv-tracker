@@ -13,7 +13,8 @@ struct MovieDetailView: View {
     @State private var isInLibrary = false
     @State private var isInWatchlist = false
     @State private var hasRating = false
-    
+    @State private var showAddConfirmation = false
+
     var body: some View {
         ScrollView {
             if isLoading {
@@ -69,6 +70,12 @@ struct MovieDetailView: View {
         .task {
             await loadMovieDetails()
             loadUserPlatforms()
+        }
+        .alert("Add to Library?", isPresented: $showAddConfirmation) {
+            Button("Add", action: confirmAddToLibrary)
+            Button("Cancel", role: .cancel)
+        } message: {
+            Text("Mark this movie as watched?")
         }
     }
     
@@ -272,6 +279,10 @@ struct MovieDetailView: View {
     }
 
     private func addToLibrary() {
+        showAddConfirmation = true
+    }
+
+    private func confirmAddToLibrary() {
         guard let userId = supabase.currentUser?.id else { return }
         Task {
             do {
