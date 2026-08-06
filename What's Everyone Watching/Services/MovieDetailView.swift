@@ -151,9 +151,7 @@ struct MovieDetailView: View {
     private func actionButtonsSection(movie: MovieDetail) -> some View {
         HStack(spacing: 12) {
             ZStack(alignment: .topTrailing) {
-                Button(action: {
-                    // TODO: Add to library
-                }) {
+                Button(action: addToLibrary) {
                     VStack(spacing: 2) {
                         Image(systemName: "books.vertical.fill")
                             .font(.system(size: 12))
@@ -180,9 +178,7 @@ struct MovieDetailView: View {
             }
 
             ZStack(alignment: .topTrailing) {
-                Button(action: {
-                    // TODO: Add to watchlist
-                }) {
+                Button(action: addToWatchlist) {
                     VStack(spacing: 2) {
                         Image(systemName: "bookmark.fill")
                             .font(.system(size: 12))
@@ -209,9 +205,7 @@ struct MovieDetailView: View {
             }
 
             ZStack(alignment: .topTrailing) {
-                Button(action: {
-                    // TODO: Rate movie
-                }) {
+                Button(action: rateMovie) {
                     VStack(spacing: 2) {
                         Image(systemName: "star.fill")
                             .font(.system(size: 12))
@@ -275,6 +269,35 @@ struct MovieDetailView: View {
                 print("Error loading user platforms: \(error)")
             }
         }
+    }
+
+    private func addToLibrary() {
+        guard let userId = supabase.currentUser?.id else { return }
+        Task {
+            do {
+                try await supabase.insertUserMovie(userId: userId, movieId: movieId, watchedDate: ISO8601DateFormatter().string(from: Date()))
+                isInLibrary = true
+            } catch {
+                print("Error adding to library: \(error)")
+            }
+        }
+    }
+
+    private func addToWatchlist() {
+        guard let userId = supabase.currentUser?.id else { return }
+        Task {
+            do {
+                try await supabase.addToWatchlistMovie(userId: userId, movieId: movieId)
+                isInWatchlist = true
+            } catch {
+                print("Error adding to watchlist: \(error)")
+            }
+        }
+    }
+
+    private func rateMovie() {
+        // For now, just toggle the state. Full rating UI would be implemented separately
+        hasRating = !hasRating
     }
 }
 
