@@ -459,7 +459,7 @@ struct BingeTabBar: View {
                     .accessibilityAddTraits(selection == tab ? [.isButton, .isSelected] : .isButton)
                 }
             }
-            .padding(.leading, BingeTheme.gutter).padding(.top, 6)
+            .padding(.horizontal, BingeTheme.gutter).padding(.top, 6).padding(.bottom, 14)
         }
         .background(onDark ? BingeTheme.ink : BingeTheme.ground)
     }
