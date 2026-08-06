@@ -153,7 +153,7 @@ struct TVShowDetailView: View {
     // MARK: - Action Buttons
     
     private func actionButtonsSection(show: TVShowDetail) -> some View {
-        VStack(spacing: 12) {
+        HStack(spacing: 12) {
             Button(action: {
                 // TODO: Add to library
             }) {
@@ -164,7 +164,7 @@ struct TVShowDetailView: View {
                     .foregroundColor(.white)
                     .cornerRadius(10)
             }
-            
+
             Button(action: {
                 // TODO: Add to watchlist
             }) {
@@ -175,7 +175,7 @@ struct TVShowDetailView: View {
                     .foregroundColor(.white)
                     .cornerRadius(10)
             }
-            
+
             Button(action: {
                 // TODO: Rate show
             }) {
