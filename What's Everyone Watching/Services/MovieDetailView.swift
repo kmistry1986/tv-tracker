@@ -73,7 +73,7 @@ struct MovieDetailView: View {
         }
         .alert("Add to Library?", isPresented: $showAddConfirmation) {
             Button("Add", action: confirmAddToLibrary)
-            Button("Cancel", role: .cancel)
+            Button("Cancel", role: .cancel) { }
         } message: {
             Text("Mark this movie as watched?")
         }
