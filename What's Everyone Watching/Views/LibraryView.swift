@@ -36,7 +36,7 @@ struct LibraryView: View {
                     Text("Movies").tag(1)
                 }
                 .pickerStyle(.segmented)
-                .padding()
+                .padding(.horizontal)
                 .padding(.top, 10)
                 
                 // Search bar

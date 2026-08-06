@@ -16,7 +16,7 @@ struct FriendsView: View {
                     Text("Requests").tag(1)
                 }
                 .pickerStyle(.segmented)
-                .padding()
+                .padding(.horizontal)
                 .padding(.top, 10)
 
                 if isLoading {

@@ -37,8 +37,9 @@ struct WatchlistView: View {
 
                     WatchlistSearchBar(text: $searchText)
                 }
-                .padding()
-                .padding(.top, 10)
+                .padding(.horizontal)
+                .padding(.vertical, 10)
+                .padding(.top, 0)
                 
                 if let errorMessage = errorMessage {
                     VStack(spacing: 12) {

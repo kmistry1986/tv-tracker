@@ -12,7 +12,7 @@ struct ImportManagementView: View {
                     Text("Prime Video").tag(1)
                 }
                 .pickerStyle(.segmented)
-                .padding()
+                .padding(.horizontal)
                 .padding(.top, 10)
 
                 if selectedTab == 0 {
