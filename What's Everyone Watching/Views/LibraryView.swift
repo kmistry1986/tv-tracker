@@ -163,9 +163,11 @@ struct LibraryView: View {
                                                 .foregroundColor(.orange)
                                         }
 
-                                        Text(formatDate(show.watchedDate))
-                                            .font(.caption)
-                                            .foregroundColor(.gray)
+                                        if let releaseDate = show.firstAirDate, !releaseDate.isEmpty {
+                                            Text("Released: \(releaseDate.prefix(4))")
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
+                                        }
 
                                         if let review = show.review, !review.isEmpty {
                                             Text(review)
@@ -415,7 +417,8 @@ struct LibraryView: View {
                         posterUrl: data.posterUrl,
                         totalEpisodes: totalEpisodes,
                         watchedEpisodes: watchedEpisodes,
-                        lastWatchedEpisode: lastWatchedEpisode
+                        lastWatchedEpisode: lastWatchedEpisode,
+                        firstAirDate: data.firstAirDate
                     )
                     showsWithDetails.append(showDetail)
                 }
@@ -589,6 +592,7 @@ struct LibraryShowWithDetails {
     let totalEpisodes: Int
     let watchedEpisodes: Int
     let lastWatchedEpisode: String? // Format: "S1E5"
+    let firstAirDate: String? // Release date of first episode
 }
 
 struct LibraryMovieWithDetails {
