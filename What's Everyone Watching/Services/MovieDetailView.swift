@@ -54,7 +54,7 @@ struct MovieDetailView: View {
                 .padding()
             }
         }
-        .navigationTitle(movie?.title ?? "Loading...")
+        .navigationTitle("Movie Details")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await loadMovieDetails()

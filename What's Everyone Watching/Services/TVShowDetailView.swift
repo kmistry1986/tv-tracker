@@ -54,7 +54,7 @@ struct TVShowDetailView: View {
                 .padding()
             }
         }
-        .navigationTitle(show?.name ?? "Loading...")
+        .navigationTitle("Show Details")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await loadShowDetails()
