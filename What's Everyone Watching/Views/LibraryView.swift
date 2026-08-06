@@ -487,12 +487,12 @@ struct LibraryView: View {
                  }
 
                  var showsWithDetails: [LibraryShowWithDetails] = []
-                 var showMap: [Int: (episodes: [Episode], title: String, posterUrl: String?)] = [:]
+                 var showMap: [Int: (episodes: [Episode], title: String, posterUrl: String?, firstAirDate: String?)] = [:]
 
                  // Group episodes by show
                  for episode in episodes {
                      if showMap[episode.showId] == nil {
-                         showMap[episode.showId] = (episodes: [], title: "Show #\(episode.showId)", posterUrl: nil)
+                         showMap[episode.showId] = (episodes: [], title: "Show #\(episode.showId)", posterUrl: nil, firstAirDate: nil)
                      }
                      showMap[episode.showId]?.episodes.append(episode)
                  }
@@ -503,22 +503,23 @@ struct LibraryView: View {
 
                  let tmdbService = self.tmdb
                  if !uniqueShowIds.isEmpty {
-                     await withTaskGroup(of: (Int, String, String?).self) { group in
+                     await withTaskGroup(of: (Int, String, String?, String?).self) { group in
                          for showId in uniqueShowIds {
                              group.addTask {
                                  do {
                                      let show = try await tmdbService.getTVShow(id: showId)
-                                     return (showId, show.name, show.imageUrl)
+                                     return (showId, show.name, show.imageUrl, show.firstAirDate)
                                  } catch {
                                      print("Could not fetch show details for \(showId): \(error)")
-                                     return (showId, "Show #\(showId)", nil)
+                                     return (showId, "Show #\(showId)", nil, nil)
                                  }
                              }
                          }
 
-                         for await (showId, name, imageUrl) in group {
+                         for await (showId, name, imageUrl, firstAirDate) in group {
                              showMap[showId]?.title = name
                              showMap[showId]?.posterUrl = imageUrl
+                             showMap[showId]?.firstAirDate = firstAirDate
                          }
                      }
                  }
@@ -585,7 +586,8 @@ struct LibraryView: View {
                                         rating: movie.rating,
                                         review: movie.review,
                                         movieTitle: movieDetail.title,
-                                        posterUrl: movieDetail.imageUrl
+                                        posterUrl: movieDetail.imageUrl,
+                                        releaseDate: movieDetail.releaseDate
                                     )
                                 } catch {
                                     print("Could not fetch movie details for \(movie.movieId): \(error)")
@@ -596,7 +598,8 @@ struct LibraryView: View {
                                         rating: movie.rating,
                                         review: movie.review,
                                         movieTitle: "Movie #\(movie.movieId)",
-                                        posterUrl: nil
+                                        posterUrl: nil,
+                                        releaseDate: nil
                                     )
                                 }
                             }
@@ -737,6 +740,7 @@ struct LibraryMovieWithDetails {
     let review: String?
     let movieTitle: String
     let posterUrl: String?
+    let releaseDate: String?
 }
 
 #Preview {
