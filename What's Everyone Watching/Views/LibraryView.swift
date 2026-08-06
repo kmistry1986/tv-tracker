@@ -12,6 +12,15 @@ struct LibraryView: View {
     @State private var searchText = ""
     @State private var showAllShows = false
     @State private var showAllMovies = false
+    @State private var showCompleteShowModal = false
+    @State private var showCompleteSeasonModal = false
+    @State private var showRatingModal = false
+    @State private var showRemoveConfirmation = false
+    @State private var selectedShowIdForModal: Int?
+    @State private var selectedShowTitleForModal: String = ""
+    @State private var selectedShowForRating: (showId: Int, title: String, isMovie: Bool)?
+    @State private var itemToRemove: (id: Int, title: String, isMovie: Bool)?
+    @Environment(\.scenePhase) var scenePhase
     
     var filteredShows: [LibraryShowWithDetails] {
         if searchText.isEmpty {
@@ -26,19 +35,71 @@ struct LibraryView: View {
         }
         return libraryMovies.filter { $0.movieTitle.localizedCaseInsensitiveContains(searchText) }
     }
-    
+
+    enum CombinedItem: Hashable {
+        case show(LibraryShowWithDetails)
+        case movie(LibraryMovieWithDetails)
+
+        var watchedDate: String {
+            switch self {
+            case .show(let show):
+                return show.watchedDate
+            case .movie(let movie):
+                return movie.watchedDate
+            }
+        }
+
+        func hash(into hasher: inout Hasher) {
+            switch self {
+            case .show(let show):
+                hasher.combine("show")
+                hasher.combine(show.id)
+            case .movie(let movie):
+                hasher.combine("movie")
+                hasher.combine(movie.id)
+            }
+        }
+
+        static func == (lhs: CombinedItem, rhs: CombinedItem) -> Bool {
+            switch (lhs, rhs) {
+            case (.show(let show1), .show(let show2)):
+                return show1.id == show2.id
+            case (.movie(let movie1), .movie(let movie2)):
+                return movie1.id == movie2.id
+            default:
+                return false
+            }
+        }
+    }
+
+    var filteredAllItems: [CombinedItem] {
+        var combined: [CombinedItem] = []
+        combined.append(contentsOf: filteredShows.map { .show($0) })
+        combined.append(contentsOf: filteredMovies.map { .movie($0) })
+
+        // Sort by watched date descending
+        combined.sort { item1, item2 in
+            let dateFormatter = ISO8601DateFormatter()
+            let date1 = dateFormatter.date(from: item1.watchedDate) ?? Date.distantPast
+            let date2 = dateFormatter.date(from: item2.watchedDate) ?? Date.distantPast
+            return date1 > date2
+        }
+
+        return combined
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 Picker("", selection: $selectedTab) {
-                    Text("All").tag(2)
-                    Text("Shows").tag(0)
-                    Text("Movies").tag(1)
+                    Text("All (\(libraryShows.count + libraryMovies.count))").tag(2)
+                    Text("Shows (\(libraryShows.count))").tag(0)
+                    Text("Movies (\(libraryMovies.count))").tag(1)
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
                 .padding(.top, 10)
-                
+
                 // Search bar
                 HStack {
                     Image(systemName: "magnifyingglass")
@@ -60,21 +121,21 @@ struct LibraryView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 20))
                 .padding(.horizontal)
                 .padding(.bottom, 8)
-                
+
                 if let errorMessage = errorMessage {
                     VStack(spacing: 12) {
                         Image(systemName: "exclamationmark.triangle")
                             .font(.system(size: 32))
                             .foregroundColor(.orange)
-                        
+
                         Text("Error loading library")
                             .font(.headline)
-                        
+
                         Text(errorMessage)
                             .font(.caption)
                             .foregroundColor(.gray)
                             .multilineTextAlignment(.center)
-                        
+
                         Button(action: loadLibrary) {
                             Text("Try Again")
                                 .frame(maxWidth: .infinity)
@@ -94,17 +155,26 @@ struct LibraryView: View {
                     }
                 } else if selectedTab == 0 {
                     showsList
+                        .refreshable {
+                            await loadLibraryAsync()
+                        }
                 } else if selectedTab == 1 {
                     moviesList
+                        .refreshable {
+                            await loadLibraryAsync()
+                        }
                 } else {
                     allItemsList
+                        .refreshable {
+                            await loadLibraryAsync()
+                        }
                 }
             }
             .navigationTitle("My Library")
             .onAppear {
                 loadLibrary()
             }
-            .onChange(of: selectedTab) { _ in
+            .onChange(of: selectedTab) {
                 searchText = ""
                 showAllShows = false
                 showAllMovies = false
@@ -112,6 +182,44 @@ struct LibraryView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
                 loadLibrary()
+            }
+            .onChange(of: scenePhase) {
+                if scenePhase == .active {
+                    loadLibrary()
+                }
+            }
+            .sheet(isPresented: $showCompleteShowModal) {
+                if let showId = selectedShowIdForModal {
+                    MarkWatchedModal(showId: showId, showTitle: selectedShowTitleForModal) { selectedEpisodeIds in
+                        saveWatchedEpisodesForShow(selectedEpisodeIds)
+                    }
+                }
+            }
+            .sheet(isPresented: $showCompleteSeasonModal) {
+                if let showId = selectedShowIdForModal {
+                    CompleteSeasonModal(showId: showId, showTitle: selectedShowTitleForModal) { watchedSeasons, unwatchedSeasons in
+                        saveWatchedSeasonsForShow(watchedSeasons: watchedSeasons, unwatchedSeasons: unwatchedSeasons)
+                    }
+                }
+            }
+            .sheet(isPresented: $showRatingModal) {
+                if let (_, title, isMovie) = selectedShowForRating {
+                    RatingView(title: title, mediaType: isMovie ? "Movie" : "TV Show")
+                }
+            }
+            .alert("Remove from Library?", isPresented: $showRemoveConfirmation) {
+                Button("Remove", role: .destructive) {
+                    if let (id, _, isMovie) = itemToRemove {
+                        Task {
+                            await removeItemFromLibrary(id: id, isMovie: isMovie)
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                if let (_, title, _) = itemToRemove {
+                    Text("No episodes watched for \"\(title)\". Remove from library?")
+                }
             }
         }
     }
@@ -140,67 +248,117 @@ struct LibraryView: View {
                 VStack(spacing: 0) {
                     List {
                         ForEach(filteredShows, id: \.id) { show in
-                            NavigationLink(destination: ShowDetailView(showId: show.showId, showTitle: show.showTitle)) {
-                                HStack(spacing: 12) {
-                                    if let imageUrl = show.posterUrl, let url = URL(string: imageUrl) {
-                                        AsyncImage(url: url) { image in
-                                            image
-                                                .resizable()
-                                                .scaledToFill()
-                                        } placeholder: {
-                                            Color.gray
-                                        }
-                                        .frame(width: 50, height: 75)
-                                        .cornerRadius(4)
-                                    } else {
-                                        Color.gray
+                            ZStack {
+                                NavigationLink(destination: ShowDetailView(showId: show.showId, showTitle: show.showTitle)) {
+                                    HStack(spacing: 12) {
+                                        if let imageUrl = show.posterUrl, let url = URL(string: imageUrl) {
+                                            AsyncImage(url: url) { image in
+                                                image
+                                                    .resizable()
+                                                    .scaledToFill()
+                                            } placeholder: {
+                                                Color.gray
+                                            }
                                             .frame(width: 50, height: 75)
                                             .cornerRadius(4)
-                                    }
-
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(show.showTitle)
-                                            .fontWeight(.semibold)
-                                            .foregroundColor(.primary)
-
-                                        if let rating = show.rating {
-                                            Text("\(String(repeating: "★", count: rating))\(String(repeating: "☆", count: 10 - rating)) \(rating)/10")
-                                                .font(.caption)
-                                                .foregroundColor(.orange)
+                                        } else {
+                                            Color.gray
+                                                .frame(width: 50, height: 75)
+                                                .cornerRadius(4)
                                         }
 
-                                        if let releaseDate = show.firstAirDate, !releaseDate.isEmpty {
-                                            Text("Released: \(formatReleaseDate(releaseDate))")
-                                                .font(.caption)
-                                                .foregroundColor(.gray)
-                                        }
-
-                                        if let review = show.review, !review.isEmpty {
-                                            Text(review)
-                                                .font(.caption)
-                                                .foregroundColor(.gray)
-                                                .lineLimit(2)
-                                        }
-                                    }
-
-                                    VStack(alignment: .trailing, spacing: 4) {
-                                        if show.watchedEpisodes == show.totalEpisodes {
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .font(.system(size: 16))
-                                                .foregroundColor(.green)
-                                        } else if let lastEpisode = show.lastWatchedEpisode {
-                                            Text(lastEpisode)
-                                                .font(.caption)
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(show.showTitle)
                                                 .fontWeight(.semibold)
-                                                .foregroundColor(.blue)
+                                                .foregroundColor(.primary)
+
+                                            if let rating = show.rating {
+                                                Text("\(String(repeating: "★", count: rating))\(String(repeating: "☆", count: 10 - rating)) \(rating)/10")
+                                                    .font(.caption)
+                                                    .foregroundColor(.orange)
+                                            } else {
+                                                Button(action: {
+                                                    selectedShowForRating = (showId: show.showId, title: show.showTitle, isMovie: false)
+                                                    showRatingModal = true
+                                                }) {
+                                                    Text("Not yet rated")
+                                                        .font(.caption)
+                                                        .foregroundColor(.blue)
+                                                }
+                                            }
+
+                                            if let releaseDate = show.firstAirDate, !releaseDate.isEmpty {
+                                                Text("Released: \(formatReleaseDate(releaseDate))")
+                                                    .font(.caption)
+                                                    .foregroundColor(.gray)
+                                            }
+
+                                            if let review = show.review, !review.isEmpty {
+                                                Text(review)
+                                                    .font(.caption)
+                                                    .foregroundColor(.gray)
+                                                    .lineLimit(2)
+                                            }
                                         }
 
-                                        Text("\(show.watchedEpisodes)/\(show.totalEpisodes) episodes")
-                                            .font(.caption)
-                                            .foregroundColor(.gray)
+                                        VStack(alignment: .trailing, spacing: 6) {
+                                            if show.watchedEpisodes < show.totalEpisodes {
+                                                if let lastEpisode = show.lastWatchedEpisode {
+                                                    Text(lastEpisode)
+                                                        .font(.caption)
+                                                        .fontWeight(.semibold)
+                                                        .foregroundColor(.blue)
+                                                }
+                                            } else {
+                                                Image(systemName: "checkmark.circle.fill")
+                                                    .font(.system(size: 16))
+                                                    .foregroundColor(.green)
+                                            }
+
+                                            Text("\(show.watchedEpisodes)/\(show.totalEpisodes) episodes")
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
+                                        }
                                     }
+                                    .padding(.vertical, 4)
                                 }
-                                .padding(.vertical, 4)
+
+                                if show.watchedEpisodes < show.totalEpisodes {
+                                    HStack(spacing: 8) {
+                                        Spacer()
+
+                                        Button(action: {
+                                            selectedShowIdForModal = show.showId
+                                            selectedShowTitleForModal = show.showTitle
+                                            showCompleteShowModal = true
+                                        }) {
+                                            Text("Complete Show")
+                                                .font(.caption2)
+                                                .fontWeight(.semibold)
+                                                .foregroundColor(.white)
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 4)
+                                                .background(Color.blue)
+                                                .cornerRadius(6)
+                                        }
+
+                                        Button(action: {
+                                            selectedShowIdForModal = show.showId
+                                            selectedShowTitleForModal = show.showTitle
+                                            showCompleteSeasonModal = true
+                                        }) {
+                                            Text("Complete Seasons")
+                                                .font(.caption2)
+                                                .fontWeight(.semibold)
+                                                .foregroundColor(.white)
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 4)
+                                                .background(Color.purple)
+                                                .cornerRadius(6)
+                                        }
+                                    }
+                                    .padding(.trailing, 12)
+                                }
                             }
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
@@ -355,67 +513,12 @@ struct LibraryView: View {
                 .padding()
             } else {
                 List {
-                    // Shows section
-                    if !filteredShows.isEmpty {
-                        Section(header: Text("Shows")) {
-                            ForEach(filteredShows, id: \.id) { show in
-                                NavigationLink(destination: ShowDetailView(showId: show.showId, showTitle: show.showTitle)) {
-                                    HStack(spacing: 12) {
-                                        if let imageUrl = show.posterUrl, let url = URL(string: imageUrl) {
-                                            AsyncImage(url: url) { image in
-                                                image
-                                                    .resizable()
-                                                    .scaledToFill()
-                                            } placeholder: {
-                                                Color.gray
-                                            }
-                                            .frame(width: 50, height: 75)
-                                            .cornerRadius(4)
-                                        } else {
-                                            Color.gray
-                                                .frame(width: 50, height: 75)
-                                                .cornerRadius(4)
-                                        }
-
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(show.showTitle)
-                                                .fontWeight(.semibold)
-
-                                            HStack(spacing: 12) {
-                                                if let rating = show.rating {
-                                                    HStack(spacing: 2) {
-                                                        Image(systemName: "star.fill")
-                                                            .foregroundColor(.orange)
-                                                        Text("\(rating)")
-                                                            .font(.caption)
-                                                    }
-                                                }
-
-                                                Text("\(show.watchedEpisodes)/\(show.totalEpisodes)")
-                                                    .font(.caption)
-                                                    .foregroundColor(.gray)
-                                            }
-
-                                            if let releaseDate = show.firstAirDate, !releaseDate.isEmpty {
-                                                Text("Released: \(formatReleaseDate(releaseDate))")
-                                                    .font(.caption)
-                                                    .foregroundColor(.gray)
-                                            }
-                                        }
-                                        Spacer()
-                                    }
-                                    .padding(.vertical, 8)
-                                }
-                            }
-                        }
-                    }
-
-                    // Movies section
-                    if !filteredMovies.isEmpty {
-                        Section(header: Text("Movies")) {
-                            ForEach(filteredMovies, id: \.id) { movie in
+                    ForEach(filteredAllItems, id: \.self) { item in
+                        switch item {
+                        case .show(let show):
+                            NavigationLink(destination: ShowDetailView(showId: show.showId, showTitle: show.showTitle)) {
                                 HStack(spacing: 12) {
-                                    if let imageUrl = movie.posterUrl, let url = URL(string: imageUrl) {
+                                    if let imageUrl = show.posterUrl, let url = URL(string: imageUrl) {
                                         AsyncImage(url: url) { image in
                                             image
                                                 .resizable()
@@ -432,30 +535,95 @@ struct LibraryView: View {
                                     }
 
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text(movie.movieTitle)
+                                        Text(show.showTitle)
                                             .fontWeight(.semibold)
 
                                         HStack(spacing: 12) {
-                                            if let rating = movie.rating {
+                                            if let rating = show.rating {
                                                 HStack(spacing: 2) {
                                                     Image(systemName: "star.fill")
                                                         .foregroundColor(.orange)
                                                     Text("\(rating)")
                                                         .font(.caption)
                                                 }
+                                            } else {
+                                                Button(action: {
+                                                    selectedShowForRating = (showId: show.showId, title: show.showTitle, isMovie: false)
+                                                    showRatingModal = true
+                                                }) {
+                                                    Text("Not rated")
+                                                        .font(.caption)
+                                                        .foregroundColor(.blue)
+                                                }
                                             }
 
-                                            if let releaseDate = movie.releaseDate, !releaseDate.isEmpty {
-                                                Text("Released: \(formatReleaseDate(releaseDate))")
-                                                    .font(.caption)
-                                                    .foregroundColor(.gray)
-                                            }
+                                            Text("\(show.watchedEpisodes)/\(show.totalEpisodes)")
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
+                                        }
+
+                                        if let releaseDate = show.firstAirDate, !releaseDate.isEmpty {
+                                            Text("Released: \(formatReleaseDate(releaseDate))")
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
                                         }
                                     }
                                     Spacer()
                                 }
                                 .padding(.vertical, 8)
                             }
+
+                        case .movie(let movie):
+                            HStack(spacing: 12) {
+                                if let imageUrl = movie.posterUrl, let url = URL(string: imageUrl) {
+                                    AsyncImage(url: url) { image in
+                                        image
+                                            .resizable()
+                                            .scaledToFill()
+                                    } placeholder: {
+                                        Color.gray
+                                    }
+                                    .frame(width: 50, height: 75)
+                                    .cornerRadius(4)
+                                } else {
+                                    Color.gray
+                                        .frame(width: 50, height: 75)
+                                        .cornerRadius(4)
+                                }
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(movie.movieTitle)
+                                        .fontWeight(.semibold)
+
+                                    HStack(spacing: 12) {
+                                        if let rating = movie.rating {
+                                            HStack(spacing: 2) {
+                                                Image(systemName: "star.fill")
+                                                    .foregroundColor(.orange)
+                                                Text("\(rating)")
+                                                    .font(.caption)
+                                            }
+                                        } else {
+                                            Button(action: {
+                                                selectedShowForRating = (showId: movie.movieId, title: movie.movieTitle, isMovie: true)
+                                                showRatingModal = true
+                                            }) {
+                                                Text("Not rated")
+                                                    .font(.caption)
+                                                    .foregroundColor(.blue)
+                                            }
+                                        }
+
+                                        if let releaseDate = movie.releaseDate, !releaseDate.isEmpty {
+                                            Text("Released: \(formatReleaseDate(releaseDate))")
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
+                                        }
+                                    }
+                                }
+                                Spacer()
+                            }
+                            .padding(.vertical, 8)
                         }
                     }
                 }
@@ -489,12 +657,12 @@ struct LibraryView: View {
                  }
 
                  var showsWithDetails: [LibraryShowWithDetails] = []
-                 var showMap: [Int: (episodes: [Episode], title: String, posterUrl: String?, firstAirDate: String?)] = [:]
+                 var showMap: [Int: (episodes: [Episode], title: String, posterUrl: String?, firstAirDate: String?, totalEpisodes: Int)] = [:]
 
                  // Group episodes by show
                  for episode in episodes {
                      if showMap[episode.showId] == nil {
-                         showMap[episode.showId] = (episodes: [], title: "Show #\(episode.showId)", posterUrl: nil, firstAirDate: nil)
+                         showMap[episode.showId] = (episodes: [], title: "Show #\(episode.showId)", posterUrl: nil, firstAirDate: nil, totalEpisodes: 0)
                      }
                      showMap[episode.showId]?.episodes.append(episode)
                  }
@@ -505,23 +673,25 @@ struct LibraryView: View {
 
                  let tmdbService = self.tmdb
                  if !uniqueShowIds.isEmpty {
-                     await withTaskGroup(of: (Int, String, String?, String?).self) { group in
+                     await withTaskGroup(of: (Int, String, String?, String?, Int).self) { group in
                          for showId in uniqueShowIds {
                              group.addTask {
                                  do {
                                      let show = try await tmdbService.getTVShow(id: showId)
-                                     return (showId, show.name, show.imageUrl, show.firstAirDate)
+                                     let posterUrl = show.posterPath.flatMap { "https://image.tmdb.org/t/p/w500\($0)" }
+                                     return (showId, show.name, posterUrl, show.firstAirDate, show.numberOfEpisodes)
                                  } catch {
                                      print("Could not fetch show details for \(showId): \(error)")
-                                     return (showId, "Show #\(showId)", nil, nil)
+                                     return (showId, "Show #\(showId)", nil, nil, 0)
                                  }
                              }
                          }
 
-                         for await (showId, name, imageUrl, firstAirDate) in group {
+                         for await (showId, name, imageUrl, firstAirDate, totalEpisodes) in group {
                              showMap[showId]?.title = name
                              showMap[showId]?.posterUrl = imageUrl
                              showMap[showId]?.firstAirDate = firstAirDate
+                             showMap[showId]?.totalEpisodes = totalEpisodes
                          }
                      }
                  }
@@ -531,10 +701,10 @@ struct LibraryView: View {
                 for (showId, data) in showMap {
                     let episodeList = data.episodes
                     let watchedEpisodes = episodeList.filter { $0.watched }.count
-                    let totalEpisodes = episodeList.count
+                    let totalEpisodes = data.totalEpisodes
 
-                    // Get last watched episode
-                    let lastWatched = episodeList.filter { $0.watched }.max { a, b in
+                    // Get last watched episode (already filtered for watched above)
+                    let lastWatched = episodeList.max { a, b in
                         let aDate = ISO8601DateFormatter().date(from: a.watchedAt ?? "") ?? Date.distantPast
                         let bDate = ISO8601DateFormatter().date(from: b.watchedAt ?? "") ?? Date.distantPast
                         return aDate < bDate
@@ -588,7 +758,7 @@ struct LibraryView: View {
                                         rating: movie.rating,
                                         review: movie.review,
                                         movieTitle: movieDetail.title,
-                                        posterUrl: movieDetail.imageUrl,
+                                        posterUrl: movieDetail.posterPath.flatMap { "https://image.tmdb.org/t/p/w500\($0)" },
                                         releaseDate: movieDetail.releaseDate
                                     )
                                 } catch {
@@ -651,6 +821,190 @@ struct LibraryView: View {
         }
     }
     
+    private func loadLibraryAsync() async {
+        guard let userId = supabase.currentUser?.id else {
+            errorMessage = "User not logged in"
+            return
+        }
+
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            print("📚 Fetching episodes for userId: \(userId)")
+            let episodes = try await supabase.fetchUserEpisodes(userId: userId)
+            print("📚 Loaded \(episodes.count) user episodes")
+
+            DispatchQueue.main.async {
+                isLoading = false
+            }
+
+            let userShows = try await supabase.fetchUserShows(userId: userId)
+            var ratingMap: [Int: Int?] = [:]
+            for userShow in userShows {
+                ratingMap[userShow.showId] = userShow.rating
+            }
+            for episode in episodes.prefix(5) {
+                print("  - S\(episode.seasonNumber)E\(episode.episodeNumber): \(episode.name) (showId: \(episode.showId), userId: \(episode.userId ?? "nil"))")
+            }
+
+            var showsWithDetails: [LibraryShowWithDetails] = []
+            var showMap: [Int: (episodes: [Episode], title: String, posterUrl: String?, firstAirDate: String?)] = [:]
+
+            for episode in episodes {
+                if showMap[episode.showId] == nil {
+                    showMap[episode.showId] = (episodes: [], title: episode.showTitle ?? "Unknown", posterUrl: nil, firstAirDate: nil)
+                }
+                showMap[episode.showId]?.episodes.append(episode)
+            }
+
+            let tmdbService2 = self.tmdb
+            if !showMap.isEmpty {
+                await withTaskGroup(of: LibraryShowWithDetails.self) { group in
+                    for (showId, data) in showMap {
+                        group.addTask {
+                            do {
+                                let showDetail = try await tmdbService2.getTVShow(id: showId)
+                                let episodeList = data.episodes
+                                let totalEpisodes = showDetail.numberOfEpisodes
+                                let watchedEpisodes = episodeList.filter { $0.watched }.count
+                                let lastWatched = episodeList.filter { $0.watched }.sorted { ($0.watchedAt ?? "") > ($1.watchedAt ?? "") }.first
+                                let lastWatchedEpisode = lastWatched.map { "S\($0.seasonNumber)E\($0.episodeNumber)" }
+                                let mostRecentDate = episodeList.compactMap { $0.watchedAt }.max() ?? ISO8601DateFormatter().string(from: Date())
+
+                                return LibraryShowWithDetails(
+                                    id: episodeList.first?.id ?? 0,
+                                    showId: showId,
+                                    watchedDate: mostRecentDate,
+                                    rating: ratingMap[showId] ?? nil,
+                                    review: nil,
+                                    showTitle: showDetail.name,
+                                    posterUrl: showDetail.posterPath.flatMap { "https://image.tmdb.org/t/p/w500\($0)" },
+                                    totalEpisodes: totalEpisodes,
+                                    watchedEpisodes: watchedEpisodes,
+                                    lastWatchedEpisode: lastWatchedEpisode,
+                                    firstAirDate: showDetail.firstAirDate
+                                )
+                            } catch {
+                                print("Error loading show \(showId): \(error)")
+                                return LibraryShowWithDetails(
+                                    id: 0,
+                                    showId: showId,
+                                    watchedDate: data.episodes.first?.watchedAt ?? ISO8601DateFormatter().string(from: Date()),
+                                    rating: ratingMap[showId] ?? nil,
+                                    review: nil,
+                                    showTitle: data.title,
+                                    posterUrl: data.posterUrl,
+                                    totalEpisodes: data.episodes.count,
+                                    watchedEpisodes: data.episodes.filter { $0.watched }.count,
+                                    lastWatchedEpisode: nil,
+                                    firstAirDate: data.firstAirDate
+                                )
+                            }
+                        }
+                    }
+
+                    for await showDetail in group {
+                        showsWithDetails.append(showDetail)
+                    }
+                }
+            }
+            print("📚 Sorting \(showsWithDetails.count) shows")
+            showsWithDetails.sort {
+                let dateFormatter = ISO8601DateFormatter()
+                let date1 = dateFormatter.date(from: $0.watchedDate) ?? Date.distantPast
+                let date2 = dateFormatter.date(from: $1.watchedDate) ?? Date.distantPast
+                return date1 > date2
+            }
+            print("📚 Shows sorted")
+
+            print("📚 Fetching movies...")
+            let movies = try await supabase.fetchUserMovies(userId: userId)
+            print("📚 Loaded \(movies.count) user movies")
+
+            var moviesWithDetails: [LibraryMovieWithDetails] = []
+            if !movies.isEmpty {
+                await withTaskGroup(of: LibraryMovieWithDetails.self) { group in
+                    for movie in movies {
+                        group.addTask {
+                            do {
+                                let movieDetail = try await tmdbService2.getMovie(id: movie.movieId)
+                                return LibraryMovieWithDetails(
+                                    id: movie.id,
+                                    movieId: movie.movieId,
+                                    watchedDate: movie.watchedDate,
+                                    rating: movie.rating,
+                                    review: movie.review,
+                                    movieTitle: movieDetail.title,
+                                    posterUrl: movieDetail.posterPath.flatMap { "https://image.tmdb.org/t/p/w500\($0)" },
+                                    releaseDate: movieDetail.releaseDate
+                                )
+                            } catch {
+                                print("Error loading movie \(movie.movieId): \(error)")
+                                return LibraryMovieWithDetails(
+                                    id: movie.id,
+                                    movieId: movie.movieId,
+                                    watchedDate: movie.watchedDate,
+                                    rating: movie.rating,
+                                    review: movie.review,
+                                    movieTitle: "Unknown",
+                                    posterUrl: nil,
+                                    releaseDate: nil
+                                )
+                            }
+                        }
+                    }
+
+                    for await movieDetail in group {
+                        moviesWithDetails.append(movieDetail)
+                    }
+                }
+            }
+            print("📚 Movie details fetched")
+
+            var movieMap: [String: LibraryMovieWithDetails] = [:]
+            for movie in moviesWithDetails {
+                if let existing = movieMap[movie.movieTitle] {
+                    if movie.watchedDate > existing.watchedDate {
+                        movieMap[movie.movieTitle] = movie
+                    }
+                } else {
+                    movieMap[movie.movieTitle] = movie
+                }
+            }
+
+            print("📚 Sorting \(moviesWithDetails.count) movies")
+            moviesWithDetails = Array(movieMap.values).sorted {
+                let dateFormatter = ISO8601DateFormatter()
+                let date1 = dateFormatter.date(from: $0.watchedDate) ?? Date.distantPast
+                let date2 = dateFormatter.date(from: $1.watchedDate) ?? Date.distantPast
+                return date1 > date2
+            }
+            print("📚 Movies sorted")
+
+            print("📚 Updating UI with \(showsWithDetails.count) shows and \(moviesWithDetails.count) movies")
+            self.libraryShows = showsWithDetails
+            self.libraryMovies = moviesWithDetails
+            self.isLoading = false
+            print("📚 UI updated, loading complete")
+
+            // Check for shows/movies with no episodes/activity
+            DispatchQueue.main.async {
+                self.checkForEmptyItems()
+            }
+        } catch {
+            let nsError = error as NSError
+            // Ignore network cancellation errors (-999) which happen during pull-to-refresh
+            if nsError.code == -999 {
+                print("ℹ️ Network request cancelled (pull-to-refresh)")
+            } else {
+                print("Error loading library: \(error)")
+                self.errorMessage = "Failed to load library: \(error.localizedDescription)"
+            }
+            self.isLoading = false
+        }
+    }
+
     private func formatDate(_ dateStr: String) -> String {
         let formatter = ISO8601DateFormatter()
         if let date = formatter.date(from: dateStr) {
@@ -733,6 +1087,17 @@ struct LibraryView: View {
             }
         }
     }
+
+    private func saveWatchedEpisodesForShow(_ episodeIds: [Int]) {
+        loadLibrary()
+        showCompleteShowModal = false
+    }
+
+    private func saveWatchedSeasonsForShow(watchedSeasons: [Int], unwatchedSeasons: [Int]) {
+        loadLibrary()
+        showCompleteSeasonModal = false
+    }
+
 }
 
 struct LibraryShowWithDetails {
@@ -758,6 +1123,33 @@ struct LibraryMovieWithDetails {
     let movieTitle: String
     let posterUrl: String?
     let releaseDate: String?
+}
+
+extension LibraryView {
+    private func removeItemFromLibrary(id: Int, isMovie: Bool) async {
+        guard let userId = supabase.currentUser?.id else { return }
+
+        do {
+            if isMovie {
+                try await supabase.removeMovieFromLibrary(userId: userId, movieId: id)
+            } else {
+                try await supabase.removeShowFromLibrary(userId: userId, showId: id)
+            }
+            loadLibrary()
+        } catch {
+            print("Error removing item from library: \(error)")
+        }
+    }
+
+    func checkForEmptyItems() {
+        if let emptyShow = libraryShows.first(where: { $0.watchedEpisodes == 0 }) {
+            itemToRemove = (id: emptyShow.showId, title: emptyShow.showTitle, isMovie: false)
+            showRemoveConfirmation = true
+        } else if let emptyMovie = libraryMovies.first(where: { $0.rating == nil && $0.releaseDate != nil }) {
+            itemToRemove = (id: emptyMovie.movieId, title: emptyMovie.movieTitle, isMovie: true)
+            showRemoveConfirmation = true
+        }
+    }
 }
 
 #Preview {

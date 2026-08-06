@@ -5,6 +5,7 @@ struct HomeView: View {
     @StateObject private var tmdb = TMDBService.shared
     @State private var trendingShows: [SearchResult] = []
     @State private var trendingMovies: [SearchResult] = []
+    @State private var partiallyWatchedShows: [LibraryShowWithDetails] = []
     @State private var libraryCount = 0
     @State private var watchlistCount = 0
     @State private var ratedCount = 0
@@ -38,6 +39,10 @@ struct HomeView: View {
                     if !showSearchOverlay {
                         ScrollView {
                             VStack(spacing: 24) {
+                                if !partiallyWatchedShows.isEmpty {
+                                    continueWatchingSection
+                                }
+
                                 if !trendingShows.isEmpty {
                                     trendingShowsSection
                                 }
@@ -59,6 +64,7 @@ struct HomeView: View {
             .onAppear {
                 loadTrendingContent()
                 loadStats()
+                loadPartiallyWatched()
             }
         }
     }
@@ -91,7 +97,65 @@ struct HomeView: View {
         ExpandedSearchView(isPresented: $showSearchOverlay)
             .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
     }
-    
+
+    private var continueWatchingSection: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Text("Continue where you left off")
+                    .font(.headline)
+
+                Spacer()
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(partiallyWatchedShows, id: \.id) { show in
+                        NavigationLink(destination: ShowDetailView(showId: show.showId, showTitle: show.showTitle)) {
+                            VStack(spacing: 8) {
+                                if let imageUrl = show.posterUrl, let url = URL(string: imageUrl) {
+                                    AsyncImage(url: url) { image in
+                                        image
+                                            .resizable()
+                                            .scaledToFill()
+                                    } placeholder: {
+                                        Color.gray
+                                    }
+                                    .frame(width: 100, height: 150)
+                                    .cornerRadius(8)
+                                } else {
+                                    Color.gray
+                                        .frame(width: 100, height: 150)
+                                        .cornerRadius(8)
+                                }
+
+                                VStack(spacing: 4) {
+                                    Text(show.showTitle)
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.primary)
+                                        .lineLimit(1)
+
+                                    if let lastEpisode = show.lastWatchedEpisode {
+                                        Text(lastEpisode)
+                                            .font(.caption2)
+                                            .foregroundColor(.blue)
+                                    }
+
+                                    Text("\(show.watchedEpisodes)/\(show.totalEpisodes)")
+                                        .font(.caption2)
+                                        .foregroundColor(.gray)
+                                }
+                                .frame(width: 100)
+                            }
+                            .frame(width: 100)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
+            }
+        }
+    }
+
     private var trendingShowsSection: some View {
         VStack(spacing: 12) {
             HStack {
@@ -191,9 +255,9 @@ struct HomeView: View {
             Text("Your Stats")
                 .font(.headline)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            
+
             HStack(spacing: 12) {
-                StatCard(icon: "books.vertical.fill", title: "Library", value: String(libraryCount), color: .blue)
+                StatCard(icon: "tv.fill", title: "Shows", value: String(libraryCount), color: .blue)
                 StatCard(icon: "bookmark.fill", title: "Watchlist", value: String(watchlistCount), color: .green)
                 StatCard(icon: "star.fill", title: "Rated", value: String(ratedCount), color: .orange)
             }
@@ -219,19 +283,105 @@ struct HomeView: View {
     
     private func loadStats() {
         guard let userId = supabase.currentUser?.id else { return }
-        
+
         Task {
             do {
                 let userShows = try await supabase.fetchUserShows(userId: userId)
                 let userMovies = try await supabase.fetchUserMovies(userId: userId)
                 let watchlistShows = try await supabase.fetchWatchlistShows(userId: userId)
                 let watchlistMovies = try await supabase.fetchWatchlistMovies(userId: userId)
-                
+
+                print("📊 Stats - Shows: \(userShows.count), Movies: \(userMovies.count)")
+                print("📊 Shows IDs: \(userShows.map { $0.showId })")
+                print("📊 Movie IDs: \(userMovies.map { $0.movieId })")
+
                 libraryCount = userShows.count + userMovies.count
                 watchlistCount = watchlistShows.count + watchlistMovies.count
                 ratedCount = (userShows.filter { $0.rating != nil }.count) + (userMovies.filter { $0.rating != nil }.count)
             } catch {
                 print("Error loading stats: \(error)")
+            }
+        }
+    }
+
+    private func loadPartiallyWatched() {
+        guard let userId = supabase.currentUser?.id else { return }
+
+        Task {
+            do {
+                let episodes = try await supabase.fetchUserEpisodes(userId: userId)
+                let userShows = try await supabase.fetchUserShows(userId: userId)
+
+                var showMap: [Int: (episodes: [Episode], title: String, posterUrl: String?, firstAirDate: String?)] = [:]
+
+                for episode in episodes {
+                    if showMap[episode.showId] == nil {
+                        showMap[episode.showId] = (episodes: [], title: episode.showTitle ?? "Unknown", posterUrl: nil, firstAirDate: nil)
+                    }
+                    showMap[episode.showId]?.episodes.append(episode)
+                }
+
+                var partialShows: [LibraryShowWithDetails] = []
+
+                for (showId, data) in showMap {
+                    if let showDetail = try? await tmdb.getTVShow(id: showId) {
+                        let episodeList = data.episodes
+                        let totalEpisodes = showDetail.numberOfEpisodes
+                        let watchedEpisodes = episodeList.filter { $0.watched }.count
+
+                        // Only include if partially watched (not complete)
+                        if watchedEpisodes > 0 && watchedEpisodes < totalEpisodes {
+                            // Get all episodes from TMDB to find next unwatched
+                            var allEpisodes: [EpisodeDetail] = []
+                            for season in 1...showDetail.numberOfSeasons {
+                                do {
+                                    let seasonDetail = try await tmdb.getTVSeason(showId: showId, seasonNumber: season)
+                                    allEpisodes.append(contentsOf: seasonDetail.episodes)
+                                } catch {
+                                    print("Could not fetch season \(season) for show \(showId)")
+                                }
+                            }
+
+                            let watchedEpisodeIds = Set(episodeList.map { $0.id })
+                            let nextUnwatched = allEpisodes.sorted { a, b in
+                                if a.seasonNumber == b.seasonNumber {
+                                    return a.episodeNumber < b.episodeNumber
+                                }
+                                return a.seasonNumber < b.seasonNumber
+                            }.first { !watchedEpisodeIds.contains($0.id) }
+
+                            let lastWatched = episodeList.sorted { ($0.watchedAt ?? "") > ($1.watchedAt ?? "") }.first
+                            let displayLabel: String? = if let next = nextUnwatched {
+                                "S\(next.seasonNumber)E\(next.episodeNumber)"
+                            } else if let last = lastWatched {
+                                "S\(last.seasonNumber)E\(last.episodeNumber)"
+                            } else {
+                                nil
+                            }
+                            let mostRecentDate = episodeList.compactMap { $0.watchedAt }.max() ?? ISO8601DateFormatter().string(from: Date())
+
+                            partialShows.append(LibraryShowWithDetails(
+                                id: episodeList.first?.id ?? 0,
+                                showId: showId,
+                                watchedDate: mostRecentDate,
+                                rating: userShows.first(where: { $0.showId == showId })?.rating,
+                                review: userShows.first(where: { $0.showId == showId })?.review,
+                                showTitle: showDetail.name,
+                                posterUrl: showDetail.posterPath.flatMap { "https://image.tmdb.org/t/p/w500\($0)" },
+                                totalEpisodes: totalEpisodes,
+                                watchedEpisodes: watchedEpisodes,
+                                lastWatchedEpisode: displayLabel,
+                                firstAirDate: showDetail.firstAirDate
+                            ))
+                        }
+                    }
+                }
+
+                DispatchQueue.main.async {
+                    self.partiallyWatchedShows = partialShows.sorted { ($0.watchedDate) > ($1.watchedDate) }
+                }
+            } catch {
+                print("Error loading partially watched shows: \(error)")
             }
         }
     }
@@ -366,7 +516,7 @@ struct ExpandedSearchView: View {
                 ScrollView {
                     LazyVStack(spacing: 12) {
                         ForEach(searchResults, id: \.id) { result in
-                            if let resultId = result.id {
+                            if result.id != nil {
                                 NavigationLink(destination: destinationView(for: result)) {
                                     HomeSearchResultRow(result: result)
                                 }
@@ -387,8 +537,8 @@ struct ExpandedSearchView: View {
                 isSearchFieldFocused = true
             }
         }
-        .onChange(of: searchText) { newValue in
-            if !newValue.isEmpty {
+        .onChange(of: searchText) {
+            if !searchText.isEmpty {
                 performSearch()
             } else {
                 searchResults = []

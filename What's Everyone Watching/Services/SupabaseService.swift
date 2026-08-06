@@ -1002,3 +1002,48 @@ extension SupabaseService {
         return results
     }
 }
+
+// MARK: - Data Management
+
+extension SupabaseService {
+    func clearUserData() async throws {
+        guard let userId = currentUser?.id else { return }
+
+        let deleteEpisodesEndpoint = "\(supabaseURL)/rest/v1/episodes?user_id=eq.\(userId)"
+        try await deleteRequest(endpoint: deleteEpisodesEndpoint)
+
+        let deleteShowsEndpoint = "\(supabaseURL)/rest/v1/user_shows?user_id=eq.\(userId)"
+        try await deleteRequest(endpoint: deleteShowsEndpoint)
+
+        let deleteMoviesEndpoint = "\(supabaseURL)/rest/v1/user_movies?user_id=eq.\(userId)"
+        try await deleteRequest(endpoint: deleteMoviesEndpoint)
+    }
+
+    func removeShowFromLibrary(userId: String, showId: Int) async throws {
+        // Delete all episodes for this show
+        try await deleteEpisodesByShowId(showId: showId, userId: userId)
+
+        // Delete the show from user_shows
+        let endpoint = "\(supabaseURL)/rest/v1/user_shows?user_id=eq.\(userId)&show_id=eq.\(showId)"
+        try await deleteRequest(endpoint: endpoint)
+    }
+
+    func removeMovieFromLibrary(userId: String, movieId: Int) async throws {
+        // Delete the movie from user_movies
+        let endpoint = "\(supabaseURL)/rest/v1/user_movies?user_id=eq.\(userId)&movie_id=eq.\(movieId)"
+        try await deleteRequest(endpoint: endpoint)
+    }
+
+    private func deleteRequest(endpoint: String) async throws {
+        var request = URLRequest(url: URL(string: endpoint)!)
+        request.httpMethod = "DELETE"
+        request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.setValue(authToken, forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw NSError(domain: "DeleteError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to delete data"])
+        }
+    }
+}

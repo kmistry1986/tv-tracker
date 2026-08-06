@@ -13,7 +13,7 @@ struct MarkWatchedModal: View {
     @State private var selectedSeasons = Set<Int>()
     @State private var showDetails: TVShowDetail?
     @State private var isLoading = true
-    @State private var seasonEpisodes: [Int: [Episode]] = [:]
+    @State private var seasonEpisodes: [Int: [EpisodeDetail]] = [:]
     @State private var loadingSeasons = Set<Int>()
 
     @StateObject private var tmdb = TMDBService.shared
@@ -109,9 +109,23 @@ struct MarkWatchedModal: View {
                     .font(.system(size: 12, weight: .semibold))
                     .rotationEffect(.degrees(expandedSeasons.contains(seasonNumber) ? 90 : 0))
 
-                Image(systemName: selectedSeasons.contains(seasonNumber) ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 16))
-                    .foregroundColor(selectedSeasons.contains(seasonNumber) ? .blue : .gray)
+                Button(action: {
+                    if selectedSeasons.contains(seasonNumber) {
+                        selectedSeasons.remove(seasonNumber)
+                        if let episodes = seasonEpisodes[seasonNumber] {
+                            selectedEpisodes.subtract(episodes.map { $0.id })
+                        }
+                    } else {
+                        selectedSeasons.insert(seasonNumber)
+                        if let episodes = seasonEpisodes[seasonNumber] {
+                            selectedEpisodes.formUnion(episodes.map { $0.id })
+                        }
+                    }
+                }) {
+                    Image(systemName: selectedSeasons.contains(seasonNumber) ? "checkmark.square.fill" : "square")
+                        .font(.system(size: 16))
+                        .foregroundColor(selectedSeasons.contains(seasonNumber) ? .blue : .gray)
+                }
 
                 Text("Season \(seasonNumber)")
                     .fontWeight(.medium)
@@ -131,8 +145,10 @@ struct MarkWatchedModal: View {
                     } else {
                         expandedSeasons.insert(seasonNumber)
                         // Load episodes when expanding
-                        Task {
-                            await loadEpisodes(for: seasonNumber)
+                        if seasonEpisodes[seasonNumber] == nil {
+                            Task {
+                                await loadEpisodes(for: seasonNumber)
+                            }
                         }
                     }
                 }
@@ -145,14 +161,27 @@ struct MarkWatchedModal: View {
             // Toggle entire season
             HStack {
                 Text("")
+                let seasonCount = seasonEpisodes[seasonNumber]?.count ?? 0
                 Button(action: {
-                    toggleSeason(seasonNumber)
+                    if seasonEpisodes[seasonNumber] == nil {
+                        Task {
+                            await loadEpisodes(for: seasonNumber)
+                        }
+                    } else {
+                        toggleSeason(seasonNumber)
+                    }
                 }) {
                     HStack {
                         Image(systemName: "square.grid.2x2")
                             .font(.system(size: 12))
-                        Text("All \(seasonEpisodes[seasonNumber]?.count ?? 0) episodes")
-                            .font(.caption)
+                        if seasonCount > 0 {
+                            Text("All \(seasonCount) episodes")
+                                .font(.caption)
+                        } else {
+                            Text("Loading episodes...")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
                     }
                     .foregroundColor(.blue)
                 }
@@ -185,7 +214,7 @@ struct MarkWatchedModal: View {
     }
 
     @ViewBuilder
-    private func episodeRow(episode: Episode) -> some View {
+    private func episodeRow(episode: EpisodeDetail) -> some View {
         HStack {
             Image(systemName: selectedEpisodes.contains(episode.id) ? "checkmark.square.fill" : "square")
                 .font(.system(size: 16))

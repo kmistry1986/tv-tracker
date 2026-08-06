@@ -65,23 +65,29 @@ struct WatchProvidersView: View {
 
             // Buy Options
             if let buyProviders = providers.buy, !buyProviders.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Buy")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                let filteredBuy = filterAndDeduplicateProviders(buyProviders)
+                if !filteredBuy.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Buy")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
 
-                    providerLogos(providers: buyProviders, showBadges: false)
+                        providerLogos(providers: buyProviders, showBadges: false)
+                    }
                 }
             }
 
             // Rent Options
             if let rentProviders = providers.rent, !rentProviders.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Rent")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                let filteredRent = filterAndDeduplicateProviders(rentProviders)
+                if !filteredRent.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Rent")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
 
-                    providerLogos(providers: rentProviders, showBadges: false)
+                        providerLogos(providers: rentProviders, showBadges: false)
+                    }
                 }
             }
             
@@ -112,7 +118,13 @@ struct WatchProvidersView: View {
     private func providerLogos(providers: [WatchProvider], showBadges: Bool = true) -> some View {
         let deduplicatedProviders = deduplicateProviders(providers)
         let mappedProviders = deduplicatedProviders.filter { provider in
-            StreamingPlatformMapper.isUserSubscribedTo(providerName: provider.providerName, userDisplayNames: [])
+            // Skip Amazon Channel variants
+            let lowerName = provider.providerName.lowercased()
+            if lowerName.contains("amazon channel") {
+                return false
+            }
+
+            return StreamingPlatformMapper.isUserSubscribedTo(providerName: provider.providerName, userDisplayNames: [])
             || StreamingPlatformMapper.platforms.contains { platform in
                 platform.tmdbProviderNames.contains { tmdbName in
                     let normalizedProvider = provider.providerName.lowercased()
@@ -120,8 +132,6 @@ struct WatchProvidersView: View {
                         .replacingOccurrences(of: " (basic)", with: "")
                         .replacingOccurrences(of: " channels", with: "")
                         .replacingOccurrences(of: " channel", with: "")
-                        .replacingOccurrences(of: " amazon channel", with: "")
-                        .replacingOccurrences(of: " amazon", with: "")
                         .trimmingCharacters(in: .whitespaces)
 
                     let normalizedTmdb = tmdbName.lowercased()
@@ -129,8 +139,6 @@ struct WatchProvidersView: View {
                         .replacingOccurrences(of: " (basic)", with: "")
                         .replacingOccurrences(of: " channels", with: "")
                         .replacingOccurrences(of: " channel", with: "")
-                        .replacingOccurrences(of: " amazon channel", with: "")
-                        .replacingOccurrences(of: " amazon", with: "")
                         .trimmingCharacters(in: .whitespaces)
 
                     return normalizedProvider == normalizedTmdb
@@ -174,20 +182,53 @@ struct WatchProvidersView: View {
         }
     }
 
+    private func filterAndDeduplicateProviders(_ providers: [WatchProvider]) -> [WatchProvider] {
+        let deduped = deduplicateProviders(providers)
+        return deduped.filter { provider in
+            let lowerName = provider.providerName.lowercased()
+            if lowerName.contains("amazon channel") {
+                return false
+            }
+
+            return StreamingPlatformMapper.isUserSubscribedTo(providerName: provider.providerName, userDisplayNames: [])
+            || StreamingPlatformMapper.platforms.contains { platform in
+                platform.tmdbProviderNames.contains { tmdbName in
+                    let normalizedProvider = provider.providerName.lowercased()
+                        .replacingOccurrences(of: " with ads", with: "")
+                        .replacingOccurrences(of: " (basic)", with: "")
+                        .replacingOccurrences(of: " channels", with: "")
+                        .replacingOccurrences(of: " channel", with: "")
+                        .trimmingCharacters(in: .whitespaces)
+
+                    let normalizedTmdb = tmdbName.lowercased()
+                        .replacingOccurrences(of: " with ads", with: "")
+                        .replacingOccurrences(of: " (basic)", with: "")
+                        .replacingOccurrences(of: " channels", with: "")
+                        .replacingOccurrences(of: " channel", with: "")
+                        .trimmingCharacters(in: .whitespaces)
+
+                    return normalizedProvider == normalizedTmdb
+                }
+            }
+        }
+    }
+
     private func deduplicateProviders(_ providers: [WatchProvider]) -> [WatchProvider] {
         var seenNames = Set<String>()
         var deduped: [WatchProvider] = []
 
         for provider in providers {
+            // Skip Amazon Channel variants entirely
+            let lowerName = provider.providerName.lowercased()
+            if lowerName.contains("amazon channel") {
+                continue
+            }
+
             let nameKey = provider.providerName.lowercased()
                 .replacingOccurrences(of: " with ads", with: "")
                 .replacingOccurrences(of: " (basic)", with: "")
                 .replacingOccurrences(of: " channels", with: "")
                 .replacingOccurrences(of: " channel", with: "")
-                // Remove any variant ending with "amazon channel"
-                .replacingOccurrences(of: " amazon channel", with: "")
-                // Remove any variant ending with "amazon" (covers "Apple TV Amazon", "HBO Max Amazon", etc.)
-                .replacingOccurrences(of: " amazon", with: "")
                 .trimmingCharacters(in: .whitespaces)
 
             if !seenNames.contains(nameKey) {

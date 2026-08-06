@@ -14,6 +14,8 @@ struct TVShowDetailView: View {
     @State private var isInWatchlist = false
     @State private var hasRating = false
     @State private var showMarkWatchedModal = false
+    @State private var showRatingModal = false
+    @State private var showWatchlistModal = false
 
     var body: some View {
         ScrollView {
@@ -74,6 +76,14 @@ struct TVShowDetailView: View {
         .sheet(isPresented: $showMarkWatchedModal) {
             MarkWatchedModal(showId: showId, showTitle: show?.name ?? "Show") { selectedEpisodeIds in
                 saveWatchedEpisodes(selectedEpisodeIds)
+            }
+        }
+        .sheet(isPresented: $showRatingModal) {
+            RatingView(title: show?.name ?? "Show", mediaType: "TV Show")
+        }
+        .sheet(isPresented: $showWatchlistModal) {
+            WatchlistPriorityModal(showTitle: show?.name ?? "Show", isMovie: false) { priority, notes in
+                addToWatchlistWithDetails(priority: priority, notes: notes)
             }
         }
     }
@@ -170,7 +180,25 @@ struct TVShowDetailView: View {
     
     private func actionButtonsSection(show: TVShowDetail) -> some View {
         HStack(spacing: 12) {
-            ZStack(alignment: .topTrailing) {
+            if isInLibrary {
+                NavigationLink(destination: ShowDetailView(showId: showId, showTitle: show.name)) {
+                    VStack(spacing: 2) {
+                        Image(systemName: "books.vertical.fill")
+                            .font(.system(size: 12))
+                        Text("View in")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                        Text("Library")
+                            .font(.caption2)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(Color.gray)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                }
+            } else {
                 Button(action: addToLibrary) {
                     VStack(spacing: 2) {
                         Image(systemName: "books.vertical.fill")
@@ -188,16 +216,27 @@ struct TVShowDetailView: View {
                     .foregroundColor(.white)
                     .cornerRadius(10)
                 }
-
-                if isInLibrary {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundColor(.green)
-                        .offset(x: 6, y: -6)
-                }
             }
 
-            ZStack(alignment: .topTrailing) {
+            if isInWatchlist {
+                NavigationLink(destination: WatchlistView()) {
+                    VStack(spacing: 2) {
+                        Image(systemName: "bookmark.fill")
+                            .font(.system(size: 12))
+                        Text("View in")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                        Text("Watchlist")
+                            .font(.caption2)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(Color.gray)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                }
+            } else {
                 Button(action: addToWatchlist) {
                     VStack(spacing: 2) {
                         Image(systemName: "bookmark.fill")
@@ -214,13 +253,6 @@ struct TVShowDetailView: View {
                     .background(Color.green)
                     .foregroundColor(.white)
                     .cornerRadius(10)
-                }
-
-                if isInWatchlist {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundColor(.green)
-                        .offset(x: 6, y: -6)
                 }
             }
 
@@ -267,6 +299,16 @@ struct TVShowDetailView: View {
 
             self.show = try await showData
             self.watchProviders = try await providersData
+
+            // Check if show is in library and watchlist
+            guard let userId = supabase.currentUser?.id else { return }
+            let inLibrary = try await supabase.isShowInLibrary(userId: userId, showId: showId)
+            let inWatchlist = try await supabase.isShowInWatchlist(userId: userId, showId: showId)
+
+            DispatchQueue.main.async {
+                self.isInLibrary = inLibrary
+                self.isInWatchlist = inWatchlist
+            }
         } catch {
             self.error = error.localizedDescription
             print("Error loading show details: \(error)")
@@ -296,16 +338,18 @@ struct TVShowDetailView: View {
     }
 
     private func addToWatchlist() {
+        showWatchlistModal = true
+    }
+
+    private func addToWatchlistWithDetails(priority: String, notes: String?) {
         guard let userId = supabase.currentUser?.id else { return }
+
         Task {
             do {
-                let alreadyInWatchlist = try await supabase.isShowInWatchlist(userId: userId, showId: showId)
-                if alreadyInWatchlist {
-                    print("Show already in watchlist")
-                    return
+                try await supabase.addToWatchlistShow(userId: userId, showId: showId, priority: priority, notes: notes)
+                DispatchQueue.main.async {
+                    self.isInWatchlist = true
                 }
-                try await supabase.addToWatchlistShow(userId: userId, showId: showId)
-                isInWatchlist = true
             } catch {
                 print("Error adding to watchlist: \(error)")
             }
@@ -313,29 +357,81 @@ struct TVShowDetailView: View {
     }
 
     private func rateShow() {
-        // For now, just toggle the state. Full rating UI would be implemented separately
-        hasRating = !hasRating
+        showRatingModal = true
     }
 
     private func saveWatchedEpisodes(_ episodeIds: [Int]) {
-        guard let userId = supabase.currentUser?.id else { return }
+        guard let userId = supabase.currentUser?.id else {
+            print("Error: User not logged in")
+            return
+        }
         Task {
             do {
+                // ALWAYS ensure the show exists in tv_shows table first (required for foreign key)
+                if let show = show {
+                    let tvShow = TVShow(
+                        id: show.id,
+                        tmdbId: show.id,
+                        title: show.name,
+                        overview: show.overview,
+                        posterUrl: show.posterPath.flatMap { "https://image.tmdb.org/t/p/w500\($0)" },
+                        firstAirDate: show.firstAirDate,
+                        numberOfSeasons: show.numberOfSeasons,
+                        numberOfEpisodes: show.numberOfEpisodes
+                    )
+                    try await supabase.insertShow(show: tvShow)
+                    print("✅ Show inserted to tv_shows table")
+                }
+
                 // Check if already in library to avoid duplicate user_shows entry
                 let alreadyInLibrary = try await supabase.isShowInLibrary(userId: userId, showId: showId)
                 if !alreadyInLibrary {
+                    print("Adding show to library: showId=\(showId)")
                     try await supabase.insertUserShow(userId: userId, showId: showId, watchedDate: ISO8601DateFormatter().string(from: Date()))
-                    isInLibrary = true
+                    DispatchQueue.main.async {
+                        self.isInLibrary = true
+                        print("✅ Show added to library")
+                    }
+                } else {
+                    print("Show already in library")
                 }
 
-                // Mark episodes as watched if any selected
-                for episodeId in episodeIds {
-                    // Update episode watched status in database
-                    // This would need a new Supabase function to update episode watched status
-                    print("Marking episode \(episodeId) as watched")
+                // If marking entire show as watched (empty array), fetch all episodes and mark them
+                if episodeIds.isEmpty && show != nil {
+                    print("Marking entire show as watched: \(show!.numberOfSeasons) seasons")
+                    let now = ISO8601DateFormatter().string(from: Date())
+                    for seasonNum in 1...show!.numberOfSeasons {
+                        let seasonDetail = try await tmdb.getTVSeason(showId: showId, seasonNumber: seasonNum)
+                        for episode in seasonDetail.episodes {
+                            let episodeRecord = Episode(
+                                id: episode.id,
+                                showId: showId,
+                                tmdbId: episode.id,
+                                seasonNumber: episode.seasonNumber,
+                                episodeNumber: episode.episodeNumber,
+                                name: episode.name,
+                                overview: episode.overview ?? "",
+                                airDate: episode.airDate,
+                                userId: userId,
+                                watched: true,
+                                watchedAt: now,
+                                showTitle: show?.name
+                            )
+                            try await supabase.insertEpisode(episode: episodeRecord)
+                        }
+                    }
+                    print("✅ All episodes marked as watched")
+                } else {
+                    // Mark selected episodes as watched
+                    for episodeId in episodeIds {
+                        print("Marking episode \(episodeId) as watched")
+                    }
                 }
             } catch {
-                print("Error saving watched episodes: \(error)")
+                print("❌ Error saving watched episodes: \(error)")
+                DispatchQueue.main.async {
+                    self.isInLibrary = false
+                }
             }
         }
     }

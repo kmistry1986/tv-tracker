@@ -14,6 +14,8 @@ struct MovieDetailView: View {
     @State private var isInWatchlist = false
     @State private var hasRating = false
     @State private var showAddConfirmation = false
+    @State private var showRatingModal = false
+    @State private var showWatchlistModal = false
 
     var body: some View {
         ScrollView {
@@ -72,10 +74,22 @@ struct MovieDetailView: View {
             loadUserPlatforms()
         }
         .alert("Add to Library?", isPresented: $showAddConfirmation) {
-            Button("Add", action: confirmAddToLibrary)
             Button("Cancel", role: .cancel) { }
+            Button("Add", action: confirmAddToLibrary)
+            Button("Add and Rate", role: .destructive) {
+                confirmAddToLibrary()
+                showRatingModal = true
+            }
         } message: {
             Text("Mark this movie as watched?")
+        }
+        .sheet(isPresented: $showRatingModal) {
+            RatingView(title: movie?.title ?? "Movie", mediaType: "Movie")
+        }
+        .sheet(isPresented: $showWatchlistModal) {
+            WatchlistPriorityModal(showTitle: movie?.title ?? "Movie", isMovie: true) { priority, notes in
+                addToWatchlistWithDetails(priority: priority, notes: notes)
+            }
         }
     }
     
@@ -157,7 +171,25 @@ struct MovieDetailView: View {
     
     private func actionButtonsSection(movie: MovieDetail) -> some View {
         HStack(spacing: 12) {
-            ZStack(alignment: .topTrailing) {
+            if isInLibrary {
+                NavigationLink(destination: LibraryView()) {
+                    VStack(spacing: 2) {
+                        Image(systemName: "books.vertical.fill")
+                            .font(.system(size: 12))
+                        Text("View in")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                        Text("Library")
+                            .font(.caption2)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(Color.gray)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                }
+            } else {
                 Button(action: addToLibrary) {
                     VStack(spacing: 2) {
                         Image(systemName: "books.vertical.fill")
@@ -175,16 +207,27 @@ struct MovieDetailView: View {
                     .foregroundColor(.white)
                     .cornerRadius(10)
                 }
-
-                if isInLibrary {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundColor(.green)
-                        .offset(x: 6, y: -6)
-                }
             }
 
-            ZStack(alignment: .topTrailing) {
+            if isInWatchlist {
+                NavigationLink(destination: WatchlistView()) {
+                    VStack(spacing: 2) {
+                        Image(systemName: "bookmark.fill")
+                            .font(.system(size: 12))
+                        Text("View in")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                        Text("Watchlist")
+                            .font(.caption2)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(Color.gray)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                }
+            } else {
                 Button(action: addToWatchlist) {
                     VStack(spacing: 2) {
                         Image(systemName: "bookmark.fill")
@@ -201,13 +244,6 @@ struct MovieDetailView: View {
                     .background(Color.green)
                     .foregroundColor(.white)
                     .cornerRadius(10)
-                }
-
-                if isInWatchlist {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundColor(.green)
-                        .offset(x: 6, y: -6)
                 }
             }
 
@@ -254,6 +290,16 @@ struct MovieDetailView: View {
 
             self.movie = try await movieData
             self.watchProviders = try await providersData
+
+            // Check if movie is in library and watchlist
+            guard let userId = supabase.currentUser?.id else { return }
+            let inLibrary = try await supabase.isMovieInLibrary(userId: userId, movieId: movieId)
+            let inWatchlist = try await supabase.isMovieInWatchlist(userId: userId, movieId: movieId)
+
+            DispatchQueue.main.async {
+                self.isInLibrary = inLibrary
+                self.isInWatchlist = inWatchlist
+            }
         } catch {
             self.error = error.localizedDescription
             print("Error loading movie details: \(error)")
@@ -279,11 +325,16 @@ struct MovieDetailView: View {
     }
 
     private func addToLibrary() {
-        showAddConfirmation = true
+        if isInLibrary {
+            // Navigate to library view
+            print("Movie already in library")
+        } else {
+            showAddConfirmation = true
+        }
     }
 
     private func confirmAddToLibrary() {
-        guard let userId = supabase.currentUser?.id else { return }
+        guard let userId = supabase.currentUser?.id, let movieDetail = movie else { return }
         Task {
             do {
                 let alreadyInLibrary = try await supabase.isMovieInLibrary(userId: userId, movieId: movieId)
@@ -291,6 +342,19 @@ struct MovieDetailView: View {
                     print("Movie already in library")
                     return
                 }
+
+                // Insert movie into movies table first
+                let movie = Movie(
+                    id: movieDetail.id,
+                    tmdbId: movieDetail.id,
+                    title: movieDetail.title,
+                    overview: movieDetail.overview,
+                    posterUrl: movieDetail.posterPath.flatMap { "https://image.tmdb.org/t/p/w500\($0)" },
+                    releaseDate: movieDetail.releaseDate
+                )
+                try await supabase.insertMovie(movie: movie)
+
+                // Then insert into user_movies
                 try await supabase.insertUserMovie(userId: userId, movieId: movieId, watchedDate: ISO8601DateFormatter().string(from: Date()))
                 isInLibrary = true
             } catch {
@@ -300,16 +364,18 @@ struct MovieDetailView: View {
     }
 
     private func addToWatchlist() {
+        showWatchlistModal = true
+    }
+
+    private func addToWatchlistWithDetails(priority: String, notes: String?) {
         guard let userId = supabase.currentUser?.id else { return }
+
         Task {
             do {
-                let alreadyInWatchlist = try await supabase.isMovieInWatchlist(userId: userId, movieId: movieId)
-                if alreadyInWatchlist {
-                    print("Movie already in watchlist")
-                    return
+                try await supabase.addToWatchlistMovie(userId: userId, movieId: movieId, priority: priority, notes: notes)
+                DispatchQueue.main.async {
+                    self.isInWatchlist = true
                 }
-                try await supabase.addToWatchlistMovie(userId: userId, movieId: movieId)
-                isInWatchlist = true
             } catch {
                 print("Error adding to watchlist: \(error)")
             }
@@ -317,8 +383,7 @@ struct MovieDetailView: View {
     }
 
     private func rateMovie() {
-        // For now, just toggle the state. Full rating UI would be implemented separately
-        hasRating = !hasRating
+        showRatingModal = true
     }
 }
 

@@ -130,9 +130,9 @@ struct AuthView: View {
         Task {
             do {
                 if isSignUp {
-                    try await supabase.signUp(email: email, password: password, name: name)
+                    _ = try await supabase.signUp(email: email, password: password, name: name)
                 } else {
-                    try await supabase.signIn(email: email, password: password)
+                    _ = try await supabase.signIn(email: email, password: password)
                 }
             } catch {
                 self.error = error.localizedDescription

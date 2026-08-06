@@ -415,7 +415,7 @@ struct NetflixImportView: View {
                         // If multiple results, use episode name to find the right show
                         var selectedResult = searchResults.first
                         if searchResults.count > 1, let episodeTitle = extractEpisodeTitle(from: entry.title) {
-                            selectedResult = try await findShowByEpisodeName(
+                            selectedResult = await findShowByEpisodeName(
                                 shows: searchResults,
                                 episodeTitle: episodeTitle,
                                 seasonNumber: entry.seasonNumber

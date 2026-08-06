@@ -144,6 +144,9 @@ struct SearchDetailView: View {
     @State private var watchlistNotes = ""
     @State private var watchProviders: WatchProvidersResult?
     @State private var isLoadingProviders = false
+    @State private var showAddConfirmation = false
+    @State private var shouldOpenRatingAfterAdd = false
+    @State private var showRatingModal = false
     @Environment(\.dismiss) var dismiss
     
     var body: some View {
@@ -258,7 +261,7 @@ struct SearchDetailView: View {
                         }
                         
                         VStack(spacing: 12) {
-                            Button(action: addToLibrary) {
+                            Button(action: { showAddConfirmation = true }) {
                                 if isAddingToLibrary {
                                     ProgressView()
                                         .tint(.white)
@@ -302,6 +305,26 @@ struct SearchDetailView: View {
                     onDismiss: { showWatchlistOptions = false }
                 )
             }
+            .alert("Add to Library?", isPresented: $showAddConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Add") {
+                    shouldOpenRatingAfterAdd = false
+                    Task {
+                        await addToLibrary()
+                    }
+                }
+                Button("Add and Rate", role: .destructive) {
+                    shouldOpenRatingAfterAdd = true
+                    Task {
+                        await addToLibrary()
+                    }
+                }
+            } message: {
+                Text("Add this \(result.mediaType == "tv" ? "show" : "movie") to your library?")
+            }
+            .sheet(isPresented: $showRatingModal) {
+                RatingView(title: result.displayTitle, mediaType: result.mediaType)
+            }
             .onAppear {
                 loadWatchProviders()
             }
@@ -324,88 +347,105 @@ struct SearchDetailView: View {
         }
     }
     
-    private func addToLibrary() {
+    private func addToLibrary() async {
         isAddingToLibrary = true
-        Task {
-            defer { isAddingToLibrary = false }
+        defer { isAddingToLibrary = false }
 
-            if result.mediaType == "tv" {
-                guard let id = result.id, let userId = supabase.currentUser?.id else { return }
+        if result.mediaType == "tv" {
+            guard let id = result.id, let userId = supabase.currentUser?.id else { return }
+            do {
+                try await supabase.insertUserShow(
+                    userId: userId,
+                    showId: id,
+                    watchedDate: ISO8601DateFormatter().string(from: Date())
+                )
+
+                // Fetch show details and insert into tv_shows first
+                let showDetail = try await tmdb.getTVShow(id: id)
+                print("📺 Fetching \(showDetail.numberOfSeasons) seasons for \(showDetail.name)")
+
+                // Insert show into tv_shows table
+                print("📺 Attempting to insert show with id=\(showDetail.id)")
+                let tvShow = TVShow(
+                    id: showDetail.id,
+                    tmdbId: showDetail.id,
+                    title: showDetail.name,
+                    overview: showDetail.overview,
+                    posterUrl: showDetail.imageUrl,
+                    firstAirDate: showDetail.firstAirDate,
+                    numberOfSeasons: showDetail.numberOfSeasons,
+                    numberOfEpisodes: showDetail.numberOfEpisodes
+                )
                 do {
-                    try await supabase.insertUserShow(
-                        userId: userId,
-                        showId: id,
-                        watchedDate: ISO8601DateFormatter().string(from: Date())
-                    )
-
-                    // Fetch show details and insert into tv_shows first
-                    let showDetail = try await tmdb.getTVShow(id: id)
-                    print("📺 Fetching \(showDetail.numberOfSeasons) seasons for \(showDetail.name)")
-
-                    // Insert show into tv_shows table
-                    print("📺 Attempting to insert show with id=\(showDetail.id)")
-                    let tvShow = TVShow(
-                        id: showDetail.id,
-                        tmdbId: showDetail.id,
-                        title: showDetail.name,
-                        overview: showDetail.overview,
-                        posterUrl: showDetail.imageUrl,
-                        firstAirDate: showDetail.firstAirDate,
-                        numberOfSeasons: showDetail.numberOfSeasons,
-                        numberOfEpisodes: showDetail.numberOfEpisodes
-                    )
-                    do {
-                        try await supabase.insertShow(show: tvShow)
-                        print("✅ Show inserted into tv_shows")
-                    } catch {
-                        print("⚠️ Could not insert show: \(error)")
-                    }
-
-                    for season in 1...showDetail.numberOfSeasons {
-                        let seasonDetail = try await tmdb.getTVSeason(showId: id, seasonNumber: season)
-                        print("📺 Season \(season): \(seasonDetail.episodes.count) episodes")
-                        for episodeDetail in seasonDetail.episodes {
-                            let episode = Episode(
-                                id: episodeDetail.id,
-                                showId: id,
-                                tmdbId: episodeDetail.id,
-                                seasonNumber: episodeDetail.seasonNumber,
-                                episodeNumber: episodeDetail.episodeNumber,
-                                name: episodeDetail.name,
-                                overview: episodeDetail.overview ?? "",
-                                airDate: episodeDetail.airDate,
-                                userId: userId,
-                                watched: false,
-                                watchedAt: nil,
-                                showTitle: showDetail.name
-                            )
-                            print("📺 Inserting episode \(episodeDetail.seasonNumber)x\(episodeDetail.episodeNumber): \(episodeDetail.name)")
-                            try await supabase.insertEpisode(episode: episode)
-                        }
-                    }
-                    print("✅ All episodes inserted")
-
-                    dismiss()
+                    try await supabase.insertShow(show: tvShow)
+                    print("✅ Show inserted into tv_shows")
                 } catch {
-                    print("Error adding show: \(error)")
+                    print("⚠️ Could not insert show: \(error)")
                 }
-            } else if result.mediaType == "movie" {
-                guard let id = result.id else { return }
-                do {
-                    let detail = try await tmdb.getMovie(id: id)
-                    let movie = Movie(
-                        id: detail.id,
-                        tmdbId: detail.id,
-                        title: detail.title,
-                        overview: detail.overview,
-                        posterUrl: detail.imageUrl,
-                        releaseDate: detail.releaseDate
-                    )
-                    try await supabase.insertMovie(movie: movie)
-                    dismiss()
-                } catch {
-                    print("Error adding movie: \(error)")
+
+                for season in 1...showDetail.numberOfSeasons {
+                    let seasonDetail = try await tmdb.getTVSeason(showId: id, seasonNumber: season)
+                    print("📺 Season \(season): \(seasonDetail.episodes.count) episodes")
+                    for episodeDetail in seasonDetail.episodes {
+                        let episode = Episode(
+                            id: episodeDetail.id,
+                            showId: id,
+                            tmdbId: episodeDetail.id,
+                            seasonNumber: episodeDetail.seasonNumber,
+                            episodeNumber: episodeDetail.episodeNumber,
+                            name: episodeDetail.name,
+                            overview: episodeDetail.overview ?? "",
+                            airDate: episodeDetail.airDate,
+                            userId: userId,
+                            watched: false,
+                            watchedAt: nil,
+                            showTitle: showDetail.name
+                        )
+                        print("📺 Inserting episode \(episodeDetail.seasonNumber)x\(episodeDetail.episodeNumber): \(episodeDetail.name)")
+                        try await supabase.insertEpisode(episode: episode)
+                    }
                 }
+                print("✅ All episodes inserted")
+
+                DispatchQueue.main.async {
+                    if shouldOpenRatingAfterAdd {
+                        showRatingModal = true
+                        shouldOpenRatingAfterAdd = false
+                    } else {
+                        dismiss()
+                    }
+                }
+            } catch {
+                print("Error adding show: \(error)")
+            }
+        } else if result.mediaType == "movie" {
+            guard let id = result.id, let userId = supabase.currentUser?.id else { return }
+            do {
+                // Fetch movie details and insert into movies table first
+                let detail = try await tmdb.getMovie(id: id)
+                let movie = Movie(
+                    id: detail.id,
+                    tmdbId: detail.id,
+                    title: detail.title,
+                    overview: detail.overview,
+                    posterUrl: detail.imageUrl,
+                    releaseDate: detail.releaseDate
+                )
+                try await supabase.insertMovie(movie: movie)
+
+                // Now insert into user_movies
+                try await supabase.insertUserMovie(userId: userId, movieId: id, watchedDate: ISO8601DateFormatter().string(from: Date()))
+
+                DispatchQueue.main.async {
+                    if shouldOpenRatingAfterAdd {
+                        showRatingModal = true
+                        shouldOpenRatingAfterAdd = false
+                    } else {
+                        dismiss()
+                    }
+                }
+            } catch {
+                print("Error adding movie: \(error)")
             }
         }
     }

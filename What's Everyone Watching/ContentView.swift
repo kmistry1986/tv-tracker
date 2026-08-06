@@ -81,6 +81,7 @@ struct MainTabView: View {
 struct ProfileView: View {
     @StateObject private var supabase = SupabaseService.shared
     @State private var showSettings = false
+    @State private var showClearDataConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -112,9 +113,14 @@ struct ProfileView: View {
                         Label("Streaming Platforms", systemImage: "play.tv")
                             .foregroundColor(.primary)
                     }
-                    
+
                     NavigationLink(destination: EmptyView()) {
                         Label("Settings", systemImage: "gear")
+                    }
+
+                    Button(action: { showClearDataConfirmation = true }) {
+                        Label("Clear My Data", systemImage: "trash")
+                            .foregroundColor(.red)
                     }
                 }
 
@@ -134,11 +140,30 @@ struct ProfileView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView()
             }
+            .alert("Clear All Data?", isPresented: $showClearDataConfirmation) {
+                Button("Delete", role: .destructive) {
+                    clearUserData()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This will permanently delete all your library, watchlist, and episode data. This action cannot be undone.")
+            }
         }
     }
 
     private func signOut() {
         supabase.signOut()
+    }
+
+    private func clearUserData() {
+        Task {
+            do {
+                try await supabase.clearUserData()
+                print("User data cleared successfully")
+            } catch {
+                print("Error clearing user data: \(error)")
+            }
+        }
     }
 }
 

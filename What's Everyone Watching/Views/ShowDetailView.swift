@@ -13,6 +13,12 @@ struct ShowDetailView: View {
     @State private var rating: Int? = nil
     @State private var isLoading = false
     @State private var isUpdatingRating = false
+    @State private var showCompleteShowConfirmation = false
+    @State private var showCompleteSeasonModal = false
+    @State private var isInLibrary = false
+    @State private var showRatingPrompt = false
+    @State private var shouldOpenRatingAfterComplete = false
+    @State private var showRatingModal = false
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
@@ -20,9 +26,6 @@ struct ShowDetailView: View {
             VStack(spacing: 0) {
                 HStack {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(showTitle)
-                            .font(.headline)
-
                         if let rating = rating {
                             HStack(spacing: 8) {
                                 Text(String(repeating: "★", count: rating) + String(repeating: "☆", count: 10 - rating))
@@ -54,6 +57,34 @@ struct ShowDetailView: View {
                     }
                 }
                 .padding()
+
+                if isInLibrary {
+                    HStack(spacing: 12) {
+                        Button(action: { showCompleteShowConfirmation = true }) {
+                            Text("Complete Show")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(Color.blue)
+                                .cornerRadius(8)
+                        }
+
+                        Button(action: { showCompleteSeasonModal = true }) {
+                            Text("Complete Seasons")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(Color.purple)
+                                .cornerRadius(8)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+                }
 
                 if isLoading {
                     VStack {
@@ -159,9 +190,50 @@ struct ShowDetailView: View {
                     }
                 }
             }
-            .navigationTitle("Episodes")
+            .navigationTitle(showTitle)
             .onAppear {
                 loadShowDetails()
+            }
+            .alert("Complete Show?", isPresented: $showCompleteShowConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Complete") {
+                    Task {
+                        await completeEntireShow()
+                    }
+                }
+                Button("Complete and Rate", role: .destructive) {
+                    shouldOpenRatingAfterComplete = true
+                    Task {
+                        await completeEntireShow()
+                    }
+                }
+            } message: {
+                Text("Mark all episodes in this show as watched?")
+            }
+            .fullScreenCover(isPresented: $showCompleteSeasonModal) {
+                CompleteSeasonModal(
+                    showId: showId,
+                    showTitle: showTitle,
+                    watchedEpisodes: watchedEpisodes,
+                    episodesBySeason: episodesBySeason
+                ) { watchedSeasons, unwatchedSeasons in
+                    Task {
+                        await saveSeasonChanges(watchedSeasons: watchedSeasons, unwatchedSeasons: unwatchedSeasons)
+                        showCompleteSeasonModal = false
+                    }
+                }
+            }
+            .alert("Rate This Show?", isPresented: $showRatingPrompt) {
+                Button("Rate Now") {
+                    // Rating is already shown in the header, just dismiss
+                    showRatingPrompt = false
+                }
+                Button("Not Now", role: .cancel) { }
+            } message: {
+                Text("You've finished watching. Would you like to rate this show?")
+            }
+            .sheet(isPresented: $showRatingModal) {
+                RatingView(title: showTitle, mediaType: "tv")
             }
         }
     }
@@ -193,12 +265,14 @@ struct ShowDetailView: View {
                 let episodes = try await supabase.fetchEpisodes(showId: showId, userId: userId)
                 watchedEpisodes = Set(episodes.filter { $0.watched }.map { $0.id })
 
-                // Load rating from user_shows
+                // Load rating from user_shows and check if in library
                 let userShows = try await supabase.fetchUserShows(userId: userId)
                 let userShow = userShows.first { $0.showId == showId }
+                let inLibrary = userShow != nil
 
                 DispatchQueue.main.async {
                     self.rating = userShow?.rating
+                    self.isInLibrary = inLibrary
                     isLoading = false
                 }
             } catch {
@@ -248,6 +322,88 @@ struct ShowDetailView: View {
             DispatchQueue.main.async {
                 isUpdatingRating = false
             }
+        }
+    }
+
+    private func completeEntireShow() async {
+        do {
+            // Mark all episodes as watched
+            for seasonNum in seasons {
+                if let episodes = episodesBySeason[seasonNum] {
+                    for episode in episodes {
+                        try await supabase.updateEpisodeWatched(episodeId: episode.id, watched: true)
+                        DispatchQueue.main.async {
+                            watchedEpisodes.insert(episode.id)
+                        }
+                    }
+                }
+            }
+            loadShowDetails()
+
+            // Check if user has rated - if not, prompt them or force rating modal
+            DispatchQueue.main.async {
+                if shouldOpenRatingAfterComplete {
+                    showRatingModal = true
+                    shouldOpenRatingAfterComplete = false
+                } else if rating == nil {
+                    showRatingPrompt = true
+                }
+            }
+        } catch {
+            print("Error completing show: \(error)")
+        }
+    }
+
+    private func saveWatchedEpisodes(_ episodeIds: [Int]) async {
+        do {
+            for episodeId in episodeIds {
+                try await supabase.updateEpisodeWatched(episodeId: episodeId, watched: true)
+                DispatchQueue.main.async {
+                    watchedEpisodes.insert(episodeId)
+                }
+            }
+            loadShowDetails()
+        } catch {
+            print("Error saving watched episodes: \(error)")
+        }
+    }
+
+    private func saveSeasonChanges(watchedSeasons: [Int], unwatchedSeasons: [Int]) async {
+        do {
+            // Mark newly checked seasons as watched
+            for seasonNum in watchedSeasons {
+                if let episodes = episodesBySeason[seasonNum] {
+                    for episode in episodes {
+                        try await supabase.updateEpisodeWatched(episodeId: episode.id, watched: true)
+                        DispatchQueue.main.async {
+                            watchedEpisodes.insert(episode.id)
+                        }
+                    }
+                }
+            }
+
+            // Mark newly unchecked seasons as unwatched
+            for seasonNum in unwatchedSeasons {
+                if let episodes = episodesBySeason[seasonNum] {
+                    for episode in episodes {
+                        try await supabase.updateEpisodeWatched(episodeId: episode.id, watched: false)
+                        DispatchQueue.main.async {
+                            watchedEpisodes.remove(episode.id)
+                        }
+                    }
+                }
+            }
+
+            loadShowDetails()
+
+            // Check if user has rated - if not and they've completed seasons, prompt them
+            DispatchQueue.main.async {
+                if rating == nil && !watchedSeasons.isEmpty {
+                    showRatingPrompt = true
+                }
+            }
+        } catch {
+            print("Error saving season changes: \(error)")
         }
     }
 }

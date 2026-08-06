@@ -74,10 +74,19 @@ struct WatchlistView: View {
                     }
                 } else if selectedTab == 0 {
                     allList
+                        .refreshable {
+                            await loadWatchlistAsync()
+                        }
                 } else if selectedTab == 1 {
                     showsList
+                        .refreshable {
+                            await loadWatchlistAsync()
+                        }
                 } else {
                     moviesList
+                        .refreshable {
+                            await loadWatchlistAsync()
+                        }
                 }
             }
             .navigationTitle("Watchlist")
@@ -330,6 +339,77 @@ struct WatchlistView: View {
         }
     }
     
+    private func loadWatchlistAsync() async {
+        guard let userId = supabase.currentUser?.id else {
+            errorMessage = "User not logged in"
+            return
+        }
+
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            let shows = try await supabase.fetchWatchlistShows(userId: userId)
+            var showsWithDetails: [WatchlistShowWithDetails] = []
+
+            for show in shows {
+                var title = "Show #\(show.showId)"
+                var posterUrl: String? = nil
+                do {
+                    let tvShow = try await tmdb.getTVShow(id: show.showId)
+                    title = tvShow.name
+                    posterUrl = tvShow.imageUrl
+                } catch {
+                    print("Could not fetch show details: \(error)")
+                }
+                showsWithDetails.append(WatchlistShowWithDetails(
+                    id: show.id,
+                    userId: show.userId,
+                    showId: show.showId,
+                    priority: show.priority,
+                    notes: show.notes,
+                    addedAt: show.addedAt,
+                    showTitle: title,
+                    posterUrl: posterUrl
+                ))
+            }
+
+            let movies = try await supabase.fetchWatchlistMovies(userId: userId)
+            var moviesWithDetails: [WatchlistMovieWithDetails] = []
+
+            for movie in movies {
+                var title = "Movie #\(movie.movieId)"
+                var posterUrl: String? = nil
+                do {
+                    let movieDetail = try await tmdb.getMovie(id: movie.movieId)
+                    title = movieDetail.title
+                    posterUrl = movieDetail.imageUrl
+                } catch {
+                    print("Could not fetch movie details: \(error)")
+                }
+                moviesWithDetails.append(WatchlistMovieWithDetails(
+                    id: movie.id,
+                    userId: movie.userId,
+                    movieId: movie.movieId,
+                    priority: movie.priority,
+                    notes: movie.notes,
+                    addedAt: movie.addedAt,
+                    movieTitle: title,
+                    posterUrl: posterUrl
+                ))
+            }
+
+            self.watchlistShows = showsWithDetails
+            self.watchlistMovies = moviesWithDetails
+            self.isLoading = false
+        } catch {
+            print("Error loading watchlist: \(error)")
+            self.watchlistShows = []
+            self.watchlistMovies = []
+            self.isLoading = false
+        }
+    }
+
     private func removeShow(_ show: WatchlistShowWithDetails) {
         Task {
             do {
@@ -381,7 +461,7 @@ struct WatchlistView: View {
 
 struct WatchlistSearchBar: View {
     @Binding var text: String
-    
+
     var body: some View {
         HStack {
             Image(systemName: "magnifyingglass")
@@ -400,8 +480,10 @@ struct WatchlistSearchBar: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.gray.opacity(0.15))
+        .background(Color(.systemGray6))
         .clipShape(RoundedRectangle(cornerRadius: 20))
+        .padding(.horizontal)
+        .padding(.bottom, 8)
     }
 }
 

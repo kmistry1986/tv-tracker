@@ -154,10 +154,10 @@ struct FriendsView: View {
 
         Task {
             do {
-                async let friendsData = supabase.fetchFriends(userId: userId)
-                async let requestsData = supabase.fetchFriendRequests(userId: userId)
+                async let friendsData = try supabase.fetchFriends(userId: userId)
+                async let requestsData = try supabase.fetchFriendRequests(userId: userId)
 
-                let (loadedFriends, loadedRequests) = await (friendsData, requestsData)
+                let (loadedFriends, loadedRequests) = try await (friendsData, requestsData)
 
                 DispatchQueue.main.async {
                     self.friends = loadedFriends
