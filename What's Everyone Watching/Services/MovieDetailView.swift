@@ -21,6 +21,13 @@ struct MovieDetailView: View {
                     .padding()
             } else if let movie = movie {
                 VStack(alignment: .leading, spacing: 20) {
+                    // Title header
+                    Text("Movie Details")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.horizontal)
+                        .padding(.top, 10)
+
                     // Header with poster and basic info
                     headerSection(movie: movie)
                     
@@ -57,7 +64,7 @@ struct MovieDetailView: View {
                 .padding()
             }
         }
-        .navigationTitle("Movie Details")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await loadMovieDetails()

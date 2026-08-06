@@ -21,6 +21,13 @@ struct TVShowDetailView: View {
                     .padding()
             } else if let show = show {
                 VStack(alignment: .leading, spacing: 20) {
+                    // Title header
+                    Text("Show Details")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.horizontal)
+                        .padding(.top, 10)
+
                     // Header with poster and basic info
                     headerSection(show: show)
                     
@@ -57,7 +64,7 @@ struct TVShowDetailView: View {
                 .padding()
             }
         }
-        .navigationTitle("Show Details")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await loadShowDetails()
