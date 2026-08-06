@@ -35,12 +35,12 @@ class StreamingPlatformMapper {
         StreamingPlatform(
             id: 9,
             displayName: "Amazon Prime",
-            tmdbProviderNames: ["Amazon Prime Video", "Amazon Prime Vide...", "Amazon Prime Video with Ads", "Amazon Video On Demand"]
+            tmdbProviderNames: ["Amazon Prime Video", "Amazon Prime Vide...", "Amazon Prime Video with Ads", "Amazon Video On Demand", "Amazon Prime Video Amazon Channel"]
         ),
         StreamingPlatform(
             id: 350,
             displayName: "Apple TV+",
-            tmdbProviderNames: ["Apple TV", "Apple TV Plus"]
+            tmdbProviderNames: ["Apple TV", "Apple TV Plus", "Apple TV Amazon Channel", "Apple TV Channels"]
         ),
         StreamingPlatform(
             id: 531,
@@ -121,6 +121,11 @@ class StreamingPlatformMapper {
             id: 189,
             displayName: "Pluto TV",
             tmdbProviderNames: ["Pluto TV"]
+        ),
+        StreamingPlatform(
+            id: 25,
+            displayName: "Fandango",
+            tmdbProviderNames: ["Fandango At Home", "FandangoNow"]
         )
     ]
 

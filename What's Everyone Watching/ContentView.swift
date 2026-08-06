@@ -5,6 +5,17 @@ import SwiftUI
 
     var body: some Scene {
         WindowGroup {
+            RootView()
+                .environmentObject(supabase)
+        }
+    }
+}
+
+struct RootView: View {
+    @EnvironmentObject var supabase: SupabaseService
+
+    var body: some View {
+        ZStack {
             if supabase.isLoggedIn {
                 if supabase.profileSetupNeeded {
                     ProfileSetupView()
@@ -18,10 +29,8 @@ import SwiftUI
                     .environmentObject(supabase)
             }
         }
-        .onAppear {
-            Task {
-                await StreamingPlatformMapper.loadPlatforms()
-            }
+        .task {
+            await StreamingPlatformMapper.loadPlatforms()
         }
     }
 }
