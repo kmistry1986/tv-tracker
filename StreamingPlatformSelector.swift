@@ -4,8 +4,8 @@ struct StreamingPlatformSelector: View {
     @Binding var selectedPlatformIds: [Int]
     
     // Streaming platforms with their TMDB provider IDs
-    // Note: Google Play, YouTube, and Apple iTunes can still show subscription badges in "Where to Watch"
-    // but are not configurable in Settings
+    // Subscription services only - rental/purchase platforms (Google Play, YouTube, iTunes, Fandango)
+    // and niche services still show in "Where to Watch" but aren't configurable in Settings
     let platforms: [(id: Int, name: String, icon: String, color: Color)] = [
         (8, "Netflix", "n.square.fill", .red),
         (337, "Disney+", "d.square.fill", .blue),
@@ -16,7 +16,6 @@ struct StreamingPlatformSelector: View {
         (531, "Paramount+", "p.square.fill", .blue),
         (1899, "Max", "m.square.fill", .indigo),
         (372, "Peacock", "bird.fill", .orange),
-        (29, "Vudu", "play.rectangle.fill", .red),
         (105, "Crunchyroll", "play.fill", .orange),
         (188, "BritBox", "play.fill", .purple),
         (37, "Showtime", "play.fill", .black),
@@ -25,8 +24,7 @@ struct StreamingPlatformSelector: View {
         (456, "Sling TV", "tv.fill", .blue),
         (386, "YouTube TV", "tv.fill", .red),
         (257, "Tubi", "play.fill", .gray),
-        (189, "Pluto TV", "play.fill", .purple),
-        (25, "Fandango", "ticket.fill", .orange)
+        (189, "Pluto TV", "play.fill", .purple)
     ]
     
     var body: some View {
