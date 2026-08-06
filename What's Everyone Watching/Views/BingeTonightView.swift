@@ -262,9 +262,10 @@ struct BingeTonightView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(BingeTheme.ink)
+        .background(BingeTheme.ink.ignoresSafeArea())
         .foregroundStyle(BingeTheme.ground)
-        .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: 5) }
+        .navigationBarHidden(true)
+        .padding(.top, 50)
         .safeAreaInset(edge: .bottom, spacing: 0) { BingeTabBar(selection: $tab, onDark: true) }
         .task { await engine.load() }
     }

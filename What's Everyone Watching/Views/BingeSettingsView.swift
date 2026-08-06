@@ -53,6 +53,17 @@ final class BingeSettingsEngine: ObservableObject {
                                                  bio: bio.isEmpty ? nil : bio,
                                                  isPublic: isPublic)
             try await supabase.saveUserPlatforms(userId: userId, platformIds: Array(selected))
+
+            // Update currentUser with new display name
+            if let user = supabase.currentUser {
+                supabase.currentUser = User(
+                    id: user.id,
+                    email: user.email,
+                    name: displayName.isEmpty ? user.email : displayName,
+                    avatarUrl: user.avatarUrl
+                )
+            }
+
             message = "Saved."
         } catch {
             message = error.localizedDescription

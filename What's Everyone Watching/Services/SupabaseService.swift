@@ -819,15 +819,17 @@ class SupabaseService: NSObject, ObservableObject {
     }
 
     func updateUserProfile(userId: String, displayName: String? = nil, bio: String? = nil, isPublic: Bool? = nil) async throws {
-        let endpoint = "\(supabaseURL)/rest/v1/user_profiles?user_id=eq.\(userId)"
+        let endpoint = "\(supabaseURL)/rest/v1/user_profiles"
 
-        struct UserProfileUpdate: Encodable {
+        struct UserProfileUpsert: Encodable {
+            let user_id: String
             let display_name: String?
             let bio: String?
             let is_public: Bool?
 
             func encode(to encoder: Encoder) throws {
                 var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(user_id, forKey: .user_id)
                 if let displayName = display_name {
                     try container.encode(displayName, forKey: .display_name)
                 }
@@ -836,10 +838,13 @@ class SupabaseService: NSObject, ObservableObject {
                 }
                 if let isPublic = is_public {
                     try container.encode(isPublic, forKey: .is_public)
+                } else {
+                    try container.encode(true, forKey: .is_public)
                 }
             }
 
             enum CodingKeys: String, CodingKey {
+                case user_id
                 case display_name
                 case bio
                 case is_public
@@ -847,18 +852,19 @@ class SupabaseService: NSObject, ObservableObject {
         }
 
         var request = URLRequest(url: URL(string: endpoint)!)
-        request.httpMethod = "PATCH"
+        request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("resolution=merge-duplicates", forHTTPHeaderField: "Prefer")
         request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
         if !authToken.isEmpty {
             request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
         }
 
-        let body = UserProfileUpdate(display_name: displayName, bio: bio, is_public: isPublic)
+        let body = UserProfileUpsert(user_id: userId, display_name: displayName, bio: bio, is_public: isPublic)
         request.httpBody = try JSONEncoder().encode(body)
 
         let (_, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 204 else {
+        guard (response as? HTTPURLResponse)?.statusCode == 201 else {
             throw NSError(domain: "API", code: -1, userInfo: [NSLocalizedDescriptionKey: "Update failed"])
         }
     }

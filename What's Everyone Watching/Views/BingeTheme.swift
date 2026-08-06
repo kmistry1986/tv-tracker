@@ -461,6 +461,6 @@ struct BingeTabBar: View {
             }
             .padding(.horizontal, BingeTheme.gutter).padding(.top, 6).padding(.bottom, 14)
         }
-        .background(onDark ? BingeTheme.ink : BingeTheme.ground)
+        .background((onDark ? BingeTheme.ink : BingeTheme.ground).ignoresSafeArea(edges: .bottom))
     }
 }
