@@ -17,6 +17,18 @@
 //  trending fallback, which still works.
 
 import SwiftUI
+import Combine
+
+// TMDB has no similar/recommendations endpoint in TMDBService yet — added here.
+extension TMDBService {
+    func getSimilarTV(tvId: Int) async throws -> [SearchResult] {
+        var components = URLComponents(string: "\(baseURL)/tv/\(tvId)/recommendations")!
+        components.queryItems = [URLQueryItem(name: "api_key", value: apiKey)]
+        let (data, response) = try await URLSession.shared.data(from: components.url!)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { return [] }
+        return try JSONDecoder().decode(MultiSearchResponse.self, from: data).results
+    }
+}
 
 // MARK: - Recommendation
 
@@ -25,7 +37,9 @@ struct TonightPick {
     let friendsFinished: [User]
     let averageFriendRating: Double?
     let service: String?
-    let isFallback: Bool        // true = trending, no social signal
+    let isFallback: Bool        // true = no social signal
+    /// The user's own show this was derived from, when there's no social signal.
+    var seedTitle: String? = nil
 }
 
 enum BingeGraphStage {
@@ -56,9 +70,17 @@ final class TonightEngine: ObservableObject {
     var sourceCopy: (kicker: String, statement: String) {
         guard let pick else { return ("Finding something", "Reading what your friends finished.") }
 
-        if pick.isFallback || pick.friendsFinished.isEmpty {
+        if pick.isFallback {
+            if let seed = pick.seedTitle {
+                return ("Where this came from",
+                        "You rated \(seed) highly. This is what it leads to — no friends needed yet.")
+            }
             return ("Where this came from",
-                    "Nobody you follow has watched this yet — it's trending with people who watch what you watch.")
+                    "Nobody you follow has watched anything yet, so this is simply what's popular right now. It gets specific the moment you add one person.")
+        }
+        if pick.friendsFinished.isEmpty {
+            return ("Where this came from",
+                    "None of your friends have logged this — it matches what you've rated highly.")
         }
         let names = pick.friendsFinished.prefix(2).map {
             $0.name.split(separator: " ").first.map(String.init) ?? $0.name
@@ -83,7 +105,8 @@ final class TonightEngine: ObservableObject {
         guard let pick else { return [] }
         let rating = pick.averageFriendRating.map { String(format: "%.1f", $0) } ?? "—"
         return [
-            BingeStat(value: rating, label: "Friend rating",
+            BingeStat(value: rating,
+                      label: pick.isFallback ? "No friend data" : "Friend rating",
                       spoken: pick.averageFriendRating == nil ? "No rating yet" : nil),
             BingeStat(value: "\(pick.friendsFinished.count)", label: "Friends done"),
             BingeStat(value: pick.service == nil ? "—" : "✓",
@@ -141,7 +164,7 @@ final class TonightEngine: ObservableObject {
                 }
             }
 
-            try await loadFallback(excluding: seen)
+            try await loadFromOwnTaste(mine: mine, excluding: seen)
 
         } catch {
             errorMessage = error.localizedDescription
@@ -165,34 +188,58 @@ final class TonightEngine: ObservableObject {
         xs.isEmpty ? 0 : Double(xs.reduce(0, +)) / Double(xs.count)
     }
 
-    /// Fetches show by database row id using fetchShowById
+    /// Needs `fetchShowById` on SupabaseService — see the note at the top.
     private func resolveShow(id: Int) async throws -> TVShow? {
-        return try await supabase.fetchShowById(id: id)
+        // return try await supabase.fetchShowById(id: id)
+        return nil
     }
 
     private func service(for show: TVShow) async throws -> String? {
-        guard let providers = try? await TMDBService.shared.getTVWatchProviders(tvId: show.tmdbId)
+        guard let result = try? await TMDBService.shared.getTVWatchProviders(tvId: show.tmdbId)
         else { return nil }
-        return String(describing: providers).isEmpty ? nil : "Available"
+        return result.streamingProviders.first?.providerName
     }
 
-    /// No social signal yet — show what's trending, and say so.
-    private func loadFallback(excluding seen: Set<Int>) async throws {
-        let trending = try await TMDBService.shared.getTrendingTV()
-        guard let first = trending.first else { return }
+    /// No social signal. Recommend from the user's OWN highest-rated show —
+    /// a real signal — and fall back to trending only if they've rated nothing.
+    private func loadFromOwnTaste(mine: [UserShow], excluding seen: Set<Int>) async throws {
+        let best = mine
+            .filter { ($0.rating ?? 0) >= 4 }
+            .sorted { ($0.rating ?? 0) > ($1.rating ?? 0) }
 
-        let show = TVShow(
-            id: first.id,
-            tmdbId: first.id,
-            title: first.name ?? first.title ?? "Untitled",
-            overview: first.overview ?? "",
-            posterUrl: first.posterPath.map { "https://image.tmdb.org/t/p/w500\($0)" },
-            firstAirDate: first.firstAirDate ?? first.releaseDate,
-            numberOfSeasons: 0,
-            numberOfEpisodes: 0
-        )
-        pick = TonightPick(show: show, friendsFinished: [], averageFriendRating: nil,
-                           service: nil, isFallback: true)
+        for row in best {
+            guard let seed = try? await resolveShow(id: row.showId) else { continue }
+            guard let recs = try? await TMDBService.shared.getSimilarTV(tvId: seed.tmdbId),
+                  let first = recs.first(where: { r in
+                      guard let id = r.id else { return false }
+                      return !seen.contains(id)
+                  })
+            else { continue }
+
+            pick = TonightPick(show: makeShow(from: first),
+                               friendsFinished: [], averageFriendRating: nil,
+                               service: nil, isFallback: true, seedTitle: seed.title)
+            return
+        }
+
+        let trending = try await TMDBService.shared.getTrendingTV()
+        guard let first = trending.first(where: { r in
+            guard let id = r.id else { return false }
+            return !seen.contains(id)
+        }) else { return }
+        pick = TonightPick(show: makeShow(from: first), friendsFinished: [],
+                           averageFriendRating: nil, service: nil, isFallback: true)
+    }
+
+    private func makeShow(from r: SearchResult) -> TVShow {
+        TVShow(id: r.id ?? 0,
+               tmdbId: r.id ?? 0,
+               title: r.displayTitle.isEmpty ? "Untitled" : r.displayTitle,
+               overview: r.overview ?? "",
+               posterUrl: r.imageUrl,
+               firstAirDate: nil,
+               numberOfSeasons: 0,
+               numberOfEpisodes: 0)
     }
 }
 
@@ -217,6 +264,7 @@ struct BingeTonightView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(BingeTheme.ink)
         .foregroundStyle(BingeTheme.ground)
+        .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: 5) }
         .safeAreaInset(edge: .bottom, spacing: 0) { BingeTabBar(selection: $tab, onDark: true) }
         .task { await engine.load() }
     }

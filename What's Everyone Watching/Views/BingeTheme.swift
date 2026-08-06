@@ -1,193 +1,266 @@
 //  BingeTheme.swift
-//  Design tokens + core components for the Binge design (Modernist).
-//  Drop into your Xcode project. iOS 16+.
+//  Design tokens + components for the Binge redesign.
+//  Every type is prefixed `Binge` so nothing collides with your existing views.
+//  iOS 16+.
 //
-//  FONTS: the design uses Archivo (Google Fonts, OFL).
-//  1. Download Archivo, add the .ttf files to your target.
-//  2. Info.plist → "Fonts provided by application" (UIAppFonts) → one entry per file.
-//  3. If you'd rather not bundle a font, swap Theme.font(...) to use
-//     .system(size:weight:design: .default) — but set .kerning() as below,
-//     the tight tracking is doing most of the work.
+//  FONTS: Archivo (Google Fonts, OFL).
+//  1. Add the .ttf files to the target.
+//  2. Info.plist → "Fonts provided by application" → one row per file.
+//  3. If text still renders as SF, call BingeTheme.debugPrintFontNames().
 
 import SwiftUI
 
 // MARK: - Tokens
 
-enum Theme {
+enum BingeTheme {
 
-    // Color — four values. Do not add a fifth without a reason.
-    static let ground   = Color(hex: 0xF3F2F2)   // paper
-    static let ink      = Color(hex: 0x201E1D)   // text, rules, dark screens
-    static let accent   = Color(hex: 0xEC3013)   // the ONE action per screen
-    static let surface  = Color(hex: 0xEAE9E9)   // tinted row / highlighted card
+    // No Color(hex:) extension — you may already have one. Local helper instead.
+    private static func c(_ hex: UInt32) -> Color {
+        Color(.sRGB,
+              red:   Double((hex >> 16) & 0xFF) / 255,
+              green: Double((hex >> 8)  & 0xFF) / 255,
+              blue:  Double( hex        & 0xFF) / 255,
+              opacity: 1)
+    }
 
-    // Derived greys (all sampled from the ink ramp — don't invent new ones)
-    static let inkMuted    = Color(hex: 0x605D5D)  // secondary text on ground
-    static let inkFaint    = Color(hex: 0xBAB6B6)  // poster placeholder, disabled
-    static let hairline    = Color(hex: 0xD7D3D3)  // 1px row divider
-    static let onDarkMuted = Color(hex: 0x8B8787)  // secondary text on ink
-    static let onDarkRule  = Color(hex: 0x3D3A39)  // divider on ink
-    static let accentTint  = Color(hex: 0xFF9783)  // accent on dark ground (contrast-safe)
+    // Four values. Don't add a fifth without a reason.
+    static let ground  = c(0xF3F2F2)
+    static let ink     = c(0x201E1D)
+    static let accent  = c(0xEC3013)
+    static let surface = c(0xEAE9E9)
 
-    // Radius — zero, everywhere. This is not negotiable in Modernist.
-    static let radius: CGFloat = 0
+    // Derived greys, sampled from the ink ramp.
+    static let inkMuted    = c(0x605D5D)
+    static let inkFaint    = c(0xBAB6B6)
+    static let hairline    = c(0xD7D3D3)
+    static let onDarkMuted = c(0x8B8787)
+    static let onDarkRule  = c(0x3D3A39)
+    static let accentTint  = c(0xFF9783)   // accent on ink — contrast-safe
+    static let accentDeep  = c(0xAE1800)   // pressed state on ground
 
-    // Rules
-    static let ruleStrong: CGFloat = 2   // section + frame edges
-    static let ruleHair: CGFloat = 1     // between rows
+    static let radius: CGFloat = 0         // zero everywhere
+    static let gutter: CGFloat = 20
+    static let minTap: CGFloat = 44
 
-    // Spacing — 4pt base
     enum Space {
         static let xs: CGFloat = 4, sm: CGFloat = 8, md: CGFloat = 12
         static let lg: CGFloat = 16, xl: CGFloat = 20, xxl: CGFloat = 28
     }
-    static let gutter: CGFloat = 20      // screen horizontal inset
 
-    // Type. Archivo only, five roles.
-    static func display(_ size: CGFloat) -> Font { .custom("Archivo-Black", size: size) }
-    static func heavy(_ size: CGFloat)   -> Font { .custom("Archivo-ExtraBold", size: size) }
-    static func semi(_ size: CGFloat)    -> Font { .custom("Archivo-SemiBold", size: size) }
-    static func body(_ size: CGFloat)    -> Font { .custom("Archivo-Regular", size: size) }
-}
+    static func display(_ s: CGFloat) -> Font { .custom("Archivo-Black", size: s, relativeTo: .largeTitle) }
+    static func heavy(_ s: CGFloat)   -> Font { .custom("Archivo-ExtraBold", size: s, relativeTo: .headline) }
+    static func semi(_ s: CGFloat)    -> Font { .custom("Archivo-SemiBold", size: s, relativeTo: .caption) }
+    static func body(_ s: CGFloat)    -> Font { .custom("Archivo-Regular", size: s, relativeTo: .body) }
 
-extension Color {
-    init(hex: UInt32) {
-        self.init(.sRGB,
-                  red:   Double((hex >> 16) & 0xFF) / 255,
-                  green: Double((hex >> 8)  & 0xFF) / 255,
-                  blue:  Double( hex        & 0xFF) / 255)
+    static func debugPrintFontNames() {
+        for f in UIFont.familyNames.sorted() { print(f, UIFont.fontNames(forFamilyName: f)) }
     }
 }
 
-// MARK: - Text roles
-// Tracking is the whole system. Display type is tight; labels are wide.
+// MARK: - Text roles (Dynamic Type aware, with per-role growth caps)
+
+private struct BingeDisplayMod: ViewModifier {
+    let size: CGFloat
+    @ScaledMetric(relativeTo: .largeTitle) private var scale: CGFloat = 1
+    func body(content: Content) -> some View {
+        let s = min(size * scale, size * 1.35)
+        content.font(BingeTheme.display(s)).tracking(s * -0.035)
+    }
+}
+private struct BingeHeadlineMod: ViewModifier {
+    let size: CGFloat
+    @ScaledMetric(relativeTo: .headline) private var scale: CGFloat = 1
+    func body(content: Content) -> some View {
+        let s = min(size * scale, size * 1.6)
+        content.font(BingeTheme.heavy(s)).tracking(s * -0.02)
+    }
+}
+private struct BingeLabelMod: ViewModifier {
+    let size: CGFloat
+    @ScaledMetric(relativeTo: .caption) private var scale: CGFloat = 1
+    func body(content: Content) -> some View {
+        let s = min(size * scale, size * 1.8)
+        content.font(BingeTheme.semi(s)).tracking(s * 0.16).textCase(.uppercase)
+    }
+}
+private struct BingeBodyMod: ViewModifier {
+    let size: CGFloat
+    @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
+    func body(content: Content) -> some View {
+        let s = size * scale
+        content.font(BingeTheme.body(s)).lineSpacing(s * 0.45)
+    }
+}
 
 extension View {
-    /// 40–56pt screen titles: PAST LIVES, MY LIBRARY, BINGE
-    func displayTitle(_ size: CGFloat = 40) -> some View {
-        self.font(Theme.display(size))
-            .tracking(size * -0.035)
-            .lineSpacing(-2)
-    }
-    /// 16–22pt row and card headlines
-    func headline(_ size: CGFloat = 17) -> some View {
-        self.font(Theme.heavy(size)).tracking(size * -0.02)
-    }
-    /// 10–11pt uppercase section labels and tab titles
-    func label(_ size: CGFloat = 11) -> some View {
-        self.font(Theme.semi(size))
-            .tracking(size * 0.16)
-            .textCase(.uppercase)
-    }
+    /// 28–52pt screen titles
+    func bingeDisplay(_ size: CGFloat = 40) -> some View { modifier(BingeDisplayMod(size: size)) }
+    /// 14–22pt row and card headlines
+    func bingeHeadline(_ size: CGFloat = 17) -> some View { modifier(BingeHeadlineMod(size: size)) }
+    /// 10–12pt uppercase labels
+    func bingeLabel(_ size: CGFloat = 11) -> some View { modifier(BingeLabelMod(size: size)) }
     /// 12–15pt reading copy
-    func bodyCopy(_ size: CGFloat = 13) -> some View {
-        self.font(Theme.body(size)).lineSpacing(size * 0.45)
-    }
+    func bingeBody(_ size: CGFloat = 13) -> some View { modifier(BingeBodyMod(size: size)) }
 }
 
 // MARK: - Rules
 
-struct Rule: View {
+struct BingeRule: View {
     var strong = false
     var onDark = false
     var body: some View {
         Rectangle()
-            .fill(onDark ? Theme.onDarkRule : (strong ? Theme.ink : Theme.hairline))
-            .frame(height: strong ? Theme.ruleStrong : Theme.ruleHair)
+            .fill(onDark ? BingeTheme.onDarkRule : (strong ? BingeTheme.ink : BingeTheme.hairline))
+            .frame(height: strong ? 2 : 1)
+            .accessibilityHidden(true)
+    }
+}
+
+struct BingeVRule: View {
+    var onDark = false
+    var body: some View {
+        Rectangle()
+            .fill(onDark ? BingeTheme.onDarkRule : BingeTheme.hairline)
+            .frame(width: 1).frame(maxHeight: .infinity)
+            .accessibilityHidden(true)
     }
 }
 
 // MARK: - Buttons
-// One filled button per screen, max. Everything else is outlined or plain.
 
-struct PrimaryButton: View {
+private struct BingeButtonStyle: ButtonStyle {
+    var filled: Bool
+    var onDark: Bool
+    func makeBody(configuration: Configuration) -> some View {
+        let pressed: Color = filled
+            ? (onDark ? BingeTheme.inkFaint : BingeTheme.accentDeep)
+            : (onDark ? Color.white.opacity(0.12) : BingeTheme.surface)
+        let normal: Color = filled ? (onDark ? BingeTheme.ground : BingeTheme.accent) : .clear
+        configuration.label
+            .background(configuration.isPressed ? pressed : normal)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+struct BingePrimaryButton: View {
     let title: String
     var onDark = false
     var action: () -> Void = {}
-
     var body: some View {
         Button(action: action) {
             HStack {
-                Text(title).font(Theme.heavy(15)).tracking(0.5).textCase(.uppercase)
-                Spacer()
-                Text("→").font(Theme.heavy(15))
+                Text(title).bingeHeadline(15).textCase(.uppercase)
+                Spacer(minLength: 12)
+                Text("→").bingeHeadline(15).accessibilityHidden(true)
             }
             .padding(.horizontal, 18).padding(.vertical, 17)
-            .frame(maxWidth: .infinity)
-            .background(onDark ? Theme.ground : Theme.accent)
-            .foregroundStyle(onDark ? Theme.ink : .white)
+            .frame(maxWidth: .infinity, minHeight: BingeTheme.minTap)
+            .foregroundStyle(onDark ? BingeTheme.ink : Color.white)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .contentShape(Rectangle())
+        .buttonStyle(BingeButtonStyle(filled: true, onDark: onDark))
     }
 }
 
-struct OutlineButton: View {
+struct BingeOutlineButton: View {
     let title: String
     var onDark = false
     var action: () -> Void = {}
-
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(Theme.semi(12)).tracking(0.7).textCase(.uppercase)
-                .frame(maxWidth: .infinity, alignment: .leading)  // flush left, always
+                .bingeLabel(12)
+                .frame(maxWidth: .infinity, alignment: .leading)   // flush left, always
                 .padding(.horizontal, 16).padding(.vertical, 14)
-                .foregroundStyle(onDark ? Theme.inkFaint : Theme.ink)
-                .overlay(Rectangle().stroke(onDark ? Theme.onDarkMuted : Theme.ink, lineWidth: 1))
+                .frame(minHeight: BingeTheme.minTap)
+                .foregroundStyle(onDark ? BingeTheme.inkFaint : BingeTheme.ink)
+                .overlay(Rectangle().stroke(onDark ? BingeTheme.onDarkMuted : BingeTheme.ink, lineWidth: 1))
+                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(BingeButtonStyle(filled: false, onDark: onDark))
     }
 }
 
-// MARK: - Segmented control (the All / Shows / Films row)
+struct BingeChip: View {
+    let title: String
+    var filled = false
+    var muted = false
+    var action: () -> Void = {}
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .bingeLabel(11)
+                .padding(.horizontal, 12).padding(.vertical, 7)
+                .frame(minHeight: 34)
+                .foregroundStyle(filled ? Color.white : (muted ? BingeTheme.inkMuted : BingeTheme.ink))
+                .background(filled ? BingeTheme.accent : Color.clear)
+                .overlay(Rectangle().stroke(filled ? Color.clear : (muted ? BingeTheme.hairline : BingeTheme.ink), lineWidth: 1))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, 5)      // invisible padding to reach a 44pt target
+    }
+}
 
-struct RuledSegmented: View {
+// MARK: - Segmented control
+
+struct BingeSegmented: View {
     let options: [String]
     @Binding var selection: Int
-
     var body: some View {
         HStack(spacing: 0) {
             ForEach(options.indices, id: \.self) { i in
                 Button { selection = i } label: {
                     Text(options[i])
-                        .font(Theme.semi(11)).tracking(0.9).textCase(.uppercase)
+                        .bingeLabel(11)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 12).padding(.vertical, 9)
-                        .foregroundStyle(selection == i ? Theme.ground : Theme.inkMuted)
-                        .background(selection == i ? Theme.ink : .clear)
+                        .frame(minHeight: BingeTheme.minTap)
+                        .foregroundStyle(selection == i ? BingeTheme.ground : BingeTheme.inkMuted)
+                        .background(selection == i ? BingeTheme.ink : Color.clear)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                if i < options.count - 1 { Rule().frame(width: 1).frame(maxHeight: .infinity) }
+                .accessibilityAddTraits(selection == i ? [.isButton, .isSelected] : .isButton)
+                if i < options.count - 1 { BingeVRule() }
             }
         }
         .fixedSize(horizontal: false, vertical: true)
-        .overlay(Rectangle().stroke(Theme.ink, lineWidth: 1))
+        .overlay(Rectangle().stroke(BingeTheme.ink, lineWidth: 1))
     }
 }
 
-// MARK: - Stat row (37 FINISHED / 9 SAVED / 6 YOU STARTED)
+// MARK: - Stat row
 
-struct StatRow: View {
-    struct Stat: Identifiable { let id = UUID(); let value: String; let label: String; var accent = false }
-    let stats: [Stat]
+struct BingeStat: Identifiable {
+    let id = UUID()
+    let value: String
+    let label: String
+    var accent = false
+    var spoken: String? = nil       // "✓" reads badly otherwise
+}
+
+struct BingeStatRow: View {
+    let stats: [BingeStat]
     var onDark = false
-
     var body: some View {
         HStack(spacing: 0) {
             ForEach(stats.indices, id: \.self) { i in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(stats[i].value)
-                        .font(Theme.display(28)).tracking(-0.9)
-                        .foregroundStyle(stats[i].accent ? (onDark ? Theme.accentTint : Theme.accent)
-                                                         : (onDark ? Theme.ground : Theme.ink))
+                        .bingeDisplay(28)
+                        .foregroundStyle(stats[i].accent
+                                         ? (onDark ? BingeTheme.accentTint : BingeTheme.accent)
+                                         : (onDark ? BingeTheme.ground : BingeTheme.ink))
                     Text(stats[i].label)
-                        .label(10)
-                        .foregroundStyle(onDark ? Theme.onDarkMuted : Theme.inkMuted)
+                        .bingeLabel(10)
+                        .foregroundStyle(onDark ? BingeTheme.onDarkMuted : BingeTheme.inkMuted)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, Theme.gutter).padding(.vertical, 14)
-                if i < stats.count - 1 { Rule(onDark: onDark).frame(width: 1).frame(maxHeight: .infinity) }
+                .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 14)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(stats[i].spoken ?? stats[i].value) \(stats[i].label)")
+                if i < stats.count - 1 { BingeVRule(onDark: onDark) }
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -195,103 +268,199 @@ struct StatRow: View {
 }
 
 // MARK: - Poster
-// AsyncImage with a flat placeholder. NEVER round the corners, never tint the art.
+// Takes your TMDB poster_url string directly. Never rounded, never tinted.
 
-struct Poster: View {
-    let url: URL?
-    var width: CGFloat = 74
+struct BingePoster: View {
+    let urlString: String?
+    var width: CGFloat? = 74
     var height: CGFloat = 104
+    var accessibilityTitle: String? = nil
+
+    private var url: URL? {
+        guard let s = urlString, !s.isEmpty else { return nil }
+        return URL(string: s)
+    }
 
     var body: some View {
         AsyncImage(url: url) { phase in
             switch phase {
             case .success(let img): img.resizable().scaledToFill()
-            default: Theme.inkFaint
+            default: BingeTheme.inkFaint
             }
         }
         .frame(width: width, height: height)
+        .frame(maxWidth: width == nil ? .infinity : nil)
         .clipped()
+        .accessibilityHidden(accessibilityTitle == nil)
+        .accessibilityLabel(accessibilityTitle ?? "")
     }
 }
 
-// MARK: - Feed row
+// MARK: - Progress
 
-struct FeedRow: View {
-    let posterURL: URL?
-    let meta: String        // "Maya · 2h ago · Hulu"
-    let headline: String    // "Finished The Bear S3 in one sitting"
+struct BingeProgress: View {
+    let fraction: Double
+    var onDark = false
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Rectangle().fill(onDark ? BingeTheme.onDarkRule : BingeTheme.hairline)
+                Rectangle().fill(onDark ? BingeTheme.accentTint : BingeTheme.ink)
+                    .frame(width: geo.size.width * min(max(fraction, 0), 1))
+            }
+        }
+        .frame(height: 3)
+        .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Rows
+
+struct BingeFeedRow<Actions: View>: View {
+    let posterURL: String?
+    let meta: String
+    let headline: String
     var quote: String? = nil
     var highlighted = false
+    @ViewBuilder var actions: () -> Actions
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
-            Poster(url: posterURL)
+            BingePoster(urlString: posterURL)
             VStack(alignment: .leading, spacing: 6) {
-                Text(meta).label(11).foregroundStyle(Theme.inkMuted)
-                Text(headline).headline(18).fixedSize(horizontal: false, vertical: true)
+                Text(meta).bingeLabel(11).foregroundStyle(BingeTheme.inkMuted)
+                Text(headline).bingeHeadline(18).fixedSize(horizontal: false, vertical: true)
                 if let quote {
-                    Text(quote).bodyCopy(13).foregroundStyle(Theme.ink.opacity(0.78))
+                    Text(quote).bingeBody(13).foregroundStyle(BingeTheme.ink.opacity(0.78))
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                HStack(spacing: 8) { actions() }.padding(.top, 2)
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, Theme.gutter).padding(.vertical, 18)
-        .background(highlighted ? Theme.surface : Theme.ground)
+        .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 18)
+        .background(highlighted ? BingeTheme.surface : BingeTheme.ground)
     }
 }
 
-// MARK: - Tonight's source band (the red statement)
-
-struct SourceBand: View {
-    let kicker: String      // "WHY YOU, WHY TONIGHT"
-    let statement: String   // "Maya, Dev and four others finished it..."
+struct BingeTitleRow<Trailing: View>: View {
+    let posterURL: String?
+    let title: String
+    let subtitle: String
+    var progress: Double? = nil
+    @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
+        HStack(spacing: 14) {
+            BingePoster(urlString: posterURL, width: 56, height: 80)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).bingeHeadline(16)
+                Text(subtitle).bingeBody(12).foregroundStyle(BingeTheme.inkMuted)
+                if let progress { BingeProgress(fraction: progress) }
+            }
+            Spacer(minLength: 8)
+            trailing()
+        }
+        .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 16)
+        .contentShape(Rectangle())
+    }
+}
+
+// MARK: - Tonight's red source band
+
+struct BingeSourceBand: View {
+    let kicker: String
+    let statement: String
+    var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(kicker).label(11).foregroundStyle(.white.opacity(0.85))
-            Text(statement).font(Theme.heavy(22)).tracking(-0.44)
+            Text(kicker).bingeLabel(11).foregroundStyle(.white.opacity(0.85))
+            Text(statement).bingeHeadline(22).fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(BingeTheme.gutter)
+        .background(BingeTheme.accent)
+        .foregroundStyle(.white)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: - Section header
+
+struct BingeSectionHeader: View {
+    let title: String
+    var trailing: String? = nil
+    var onDark = false
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title).bingeLabel(11)
+                .foregroundStyle(onDark ? BingeTheme.onDarkMuted : BingeTheme.inkMuted)
+            Spacer()
+            if let trailing {
+                Text(trailing).bingeLabel(11)
+                    .foregroundStyle(onDark ? BingeTheme.accentTint : BingeTheme.accent)
+            }
+        }
+        .padding(.horizontal, BingeTheme.gutter).padding(.top, 14).padding(.bottom, 8)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+// MARK: - Empty state
+// Binge empty states argue for the product. They never shrug.
+
+struct BingeArgumentBlock: View {
+    let kicker: String
+    let headline: String
+    let message: String
+    var onDark = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(kicker).bingeLabel(11)
+                .foregroundStyle(onDark ? BingeTheme.accentTint : BingeTheme.accent)
+            Text(headline).bingeDisplay(28)
+                .foregroundStyle(onDark ? BingeTheme.ground : BingeTheme.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(message).bingeBody(13)
+                .foregroundStyle(onDark ? BingeTheme.inkFaint : BingeTheme.ink.opacity(0.78))
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Theme.gutter)
-        .background(Theme.accent)
-        .foregroundStyle(.white)
+        .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 26)
     }
 }
 
 // MARK: - Tab bar
-// Native TabView won't give you flush-left uppercase labels with no icons.
-// This is the custom bar. Keep it pinned with .safeAreaInset, never in a ScrollView.
+// Named BingeTab, not Tab — SwiftUI added its own `Tab` type in iOS 18.
 
-enum Tab: String, CaseIterable { case tonight = "Tonight", friends = "Friends", you = "You" }
+enum BingeTab: String, CaseIterable {
+    case tonight = "Tonight", friends = "Friends", you = "You"
+}
 
-struct RuledTabBar: View {
-    @Binding var selection: Tab
+struct BingeTabBar: View {
+    @Binding var selection: BingeTab
     var onDark = false
-
     var body: some View {
         VStack(spacing: 0) {
             Rectangle()
-                .fill(onDark ? Theme.onDarkRule : Theme.ink)
+                .fill(onDark ? BingeTheme.onDarkRule : BingeTheme.ink)
                 .frame(height: onDark ? 1 : 2)
             HStack(spacing: 0) {
-                ForEach(Tab.allCases, id: \.self) { tab in
+                ForEach(BingeTab.allCases, id: \.self) { tab in
                     Button { selection = tab } label: {
                         Text(tab.rawValue)
-                            .font(Theme.semi(10)).tracking(1.2).textCase(.uppercase)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .bingeLabel(10)
+                            .frame(maxWidth: .infinity, minHeight: BingeTheme.minTap, alignment: .leading)
                             .foregroundStyle(selection == tab
-                                             ? (onDark ? Theme.accentTint : Theme.accent)
-                                             : (onDark ? Theme.onDarkMuted : Theme.inkMuted))
+                                             ? (onDark ? BingeTheme.accentTint : BingeTheme.accent)
+                                             : (onDark ? BingeTheme.onDarkMuted : BingeTheme.inkMuted))
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityAddTraits(selection == tab ? [.isButton, .isSelected] : .isButton)
                 }
             }
-            .padding(.leading, Theme.gutter)
-            .padding(.top, 14)
-            .padding(.bottom, 8)   // home indicator handled by safeAreaInset
+            .padding(.leading, BingeTheme.gutter).padding(.top, 6)
         }
-        .background(onDark ? Theme.ink : Theme.ground)
+        .background(onDark ? BingeTheme.ink : BingeTheme.ground)
     }
 }

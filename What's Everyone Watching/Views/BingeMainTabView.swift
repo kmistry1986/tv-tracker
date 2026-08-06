@@ -20,7 +20,7 @@ struct BingeMainTabView: View {
             case .friends:
                 NavigationStack { BingeFriendsTab(tab: $tab) }
             case .you:
-                NavigationStack { BingeYouTab(tab: $tab) }
+                NavigationStack { BingeYouView(tab: $tab) }
             }
         }
         .environmentObject(supabase)
@@ -52,9 +52,8 @@ struct BingeFriendsTab: View {
             // Your existing views, restyled by the surrounding chrome.
             // Their own NavigationStacks are suppressed by the toolbar hiding below.
             Group {
-                if section == 0 { ActivityFeedView() } else { FriendsView() }
+                if section == 0 { BingeFriendsFeed(tab: $tab) } else { BingePeopleTab() }
             }
-            .toolbar(.hidden, for: .navigationBar)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(BingeTheme.ground)
