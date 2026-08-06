@@ -1,0 +1,347 @@
+//  BingeTonightView.swift
+//  The one genuinely new screen. Wired to your SupabaseService + TMDBService.
+//
+//  Reads: fetchFriends, getFriendRatings, fetchUserShows, fetchShow(tmdbId:),
+//         addToWatchlistShow, TMDBService.getTrendingTV, getTVWatchProviders.
+//
+//  ONE GAP: `UserShow.showId` is your DB row id, but `SupabaseService.fetchShow`
+//  looks up by `tmdb_id`. Add this to SupabaseService and the engine resolves
+//  real titles instead of falling back to trending:
+//
+//      func fetchShowById(id: Int) async throws -> TVShow {
+//          try await client.from("tv_shows").select().eq("id", value: id)
+//              .single().execute().value
+//      }
+//
+//  Until then TonightEngine.resolveShow() returns nil and Tonight shows the
+//  trending fallback, which still works.
+
+import SwiftUI
+
+// MARK: - Recommendation
+
+struct TonightPick {
+    let show: TVShow
+    let friendsFinished: [User]
+    let averageFriendRating: Double?
+    let service: String?
+    let isFallback: Bool        // true = trending, no social signal
+}
+
+enum BingeGraphStage {
+    case cold, seeded, social
+    static func from(friendCount: Int) -> BingeGraphStage {
+        switch friendCount {
+        case 0:     return .cold
+        case 1...4: return .seeded
+        default:    return .social
+        }
+    }
+}
+
+@MainActor
+final class TonightEngine: ObservableObject {
+    @Published var pick: TonightPick?
+    @Published var friends: [User] = []
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    /// Shows already dismissed this session, so "Show me another" advances.
+    private var skipped: Set<Int> = []
+
+    private let supabase = SupabaseService.shared
+
+    var stage: BingeGraphStage { .from(friendCount: friends.count) }
+
+    // The sentence in the red band. Upgrades as the graph grows.
+    var sourceCopy: (kicker: String, statement: String) {
+        guard let pick else { return ("Finding something", "Reading what your friends finished.") }
+
+        if pick.isFallback || pick.friendsFinished.isEmpty {
+            return ("Where this came from",
+                    "Nobody you follow has watched this yet — it's trending with people who watch what you watch.")
+        }
+        let names = pick.friendsFinished.prefix(2).map {
+            $0.name.split(separator: " ").first.map(String.init) ?? $0.name
+        }
+        let others = pick.friendsFinished.count - names.count
+
+        switch stage {
+        case .cold:
+            return ("Where this came from",
+                    "Based on what you've finished. Add friends and this gets specific.")
+        case .seeded:
+            let who = names.joined(separator: " and ")
+            return ("Why you, why tonight",
+                    "\(who) finished it\(others > 0 ? ", plus \(others) more" : "") — and didn't stop early.")
+        case .social:
+            return ("Why you, why tonight",
+                    "\(pick.friendsFinished.count) of your \(friends.count) friends finished it. Not one stopped early.")
+        }
+    }
+
+    var stats: [BingeStat] {
+        guard let pick else { return [] }
+        let rating = pick.averageFriendRating.map { String(format: "%.1f", $0) } ?? "—"
+        return [
+            BingeStat(value: rating, label: "Friend rating",
+                      spoken: pick.averageFriendRating == nil ? "No rating yet" : nil),
+            BingeStat(value: "\(pick.friendsFinished.count)", label: "Friends done"),
+            BingeStat(value: pick.service == nil ? "—" : "✓",
+                      label: pick.service ?? "Not on your plan",
+                      accent: pick.service != nil,
+                      spoken: pick.service == nil ? "Not available" : "Yes")
+        ]
+    }
+
+    // MARK: Load
+
+    func load() async {
+        guard let userId = supabase.currentUser?.id else {
+            errorMessage = "Not signed in."
+            return
+        }
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            friends = try await supabase.fetchFriends(userId: userId)
+
+            // What the user has already watched — never recommend these.
+            let mine = try await supabase.fetchUserShows(userId: userId)
+            let seen = Set(mine.map(\.showId))
+
+            // Tally friends' well-rated shows.
+            var tally: [Int: (count: Int, ratings: [Int], who: [User])] = [:]
+            for friend in friends {
+                let rated = (try? await supabase.getFriendRatings(friendId: friend.id)) ?? []
+                for row in rated where !seen.contains(row.showId) && !skipped.contains(row.showId) {
+                    guard (row.rating ?? 0) >= 4 else { continue }
+                    var entry = tally[row.showId] ?? (0, [], [])
+                    entry.count += 1
+                    if let r = row.rating { entry.ratings.append(r) }
+                    entry.who.append(friend)
+                    tally[row.showId] = entry
+                }
+            }
+
+            // Best candidate: most friends, then highest average.
+            let ranked = tally.sorted {
+                if $0.value.count != $1.value.count { return $0.value.count > $1.value.count }
+                return average($0.value.ratings) > average($1.value.ratings)
+            }
+
+            for (showId, entry) in ranked {
+                if let show = try? await resolveShow(id: showId) {
+                    pick = TonightPick(show: show,
+                                       friendsFinished: entry.who,
+                                       averageFriendRating: average(entry.ratings),
+                                       service: try? await service(for: show),
+                                       isFallback: false)
+                    return
+                }
+            }
+
+            try await loadFallback(excluding: seen)
+
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func skipCurrent() async {
+        if let id = pick?.show.id { skipped.insert(id) }
+        pick = nil
+        await load()
+    }
+
+    func saveCurrent() async {
+        guard let userId = supabase.currentUser?.id, let show = pick?.show else { return }
+        try? await supabase.addToWatchlistShow(userId: userId, showId: show.id, priority: "high")
+    }
+
+    // MARK: Helpers
+
+    private func average(_ xs: [Int]) -> Double {
+        xs.isEmpty ? 0 : Double(xs.reduce(0, +)) / Double(xs.count)
+    }
+
+    /// Fetches show by database row id using fetchShowById
+    private func resolveShow(id: Int) async throws -> TVShow? {
+        return try await supabase.fetchShowById(id: id)
+    }
+
+    private func service(for show: TVShow) async throws -> String? {
+        guard let providers = try? await TMDBService.shared.getTVWatchProviders(tvId: show.tmdbId)
+        else { return nil }
+        return String(describing: providers).isEmpty ? nil : "Available"
+    }
+
+    /// No social signal yet — show what's trending, and say so.
+    private func loadFallback(excluding seen: Set<Int>) async throws {
+        let trending = try await TMDBService.shared.getTrendingTV()
+        guard let first = trending.first else { return }
+
+        let show = TVShow(
+            id: first.id,
+            tmdbId: first.id,
+            title: first.name ?? first.title ?? "Untitled",
+            overview: first.overview ?? "",
+            posterUrl: first.posterPath.map { "https://image.tmdb.org/t/p/w500\($0)" },
+            firstAirDate: first.firstAirDate ?? first.releaseDate,
+            numberOfSeasons: 0,
+            numberOfEpisodes: 0
+        )
+        pick = TonightPick(show: show, friendsFinished: [], averageFriendRating: nil,
+                           service: nil, isFallback: true)
+    }
+}
+
+// MARK: - View
+
+struct BingeTonightView: View {
+    @StateObject private var engine = TonightEngine()
+    @Binding var tab: BingeTab
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+
+            if engine.isLoading && engine.pick == nil {
+                loading
+            } else if let pick = engine.pick {
+                content(pick)
+            } else {
+                empty
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(BingeTheme.ink)
+        .foregroundStyle(BingeTheme.ground)
+        .safeAreaInset(edge: .bottom, spacing: 0) { BingeTabBar(selection: $tab, onDark: true) }
+        .task { await engine.load() }
+    }
+
+    private var header: some View {
+        HStack {
+            Text(weekday).bingeLabel(11).foregroundStyle(BingeTheme.accentTint)
+            Spacer()
+            Text(engine.friends.isEmpty ? "0 friends yet" : "\(engine.friends.count) friends")
+                .bingeLabel(11).foregroundStyle(BingeTheme.onDarkMuted)
+        }
+        .padding(.horizontal, BingeTheme.gutter).padding(.top, 8).padding(.bottom, 12)
+    }
+
+    private var loading: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            ProgressView().tint(BingeTheme.accentTint)
+            Text("Reading what your friends finished")
+                .bingeLabel(11).foregroundStyle(BingeTheme.onDarkMuted)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var empty: some View {
+        VStack(spacing: 0) {
+            BingeArgumentBlock(
+                kicker: engine.errorMessage == nil ? "Nothing to go on yet" : "Something broke",
+                headline: engine.errorMessage == nil ? "ADD ONE PERSON\nAND THIS WORKS." : "COULDN'T LOAD\nTONIGHT.",
+                message: engine.errorMessage ?? "Tonight reads what the people you follow actually finished. Right now there's nobody to read.",
+                onDark: true)
+            Spacer()
+            BingePrimaryButton(title: engine.errorMessage == nil ? "Find your people" : "Try again",
+                               onDark: true) {
+                if engine.errorMessage == nil { tab = .friends }
+                else { Task { await engine.load() } }
+            }
+            .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 14)
+        }
+    }
+
+    private func content(_ pick: TonightPick) -> some View {
+        VStack(spacing: 0) {
+            ZStack(alignment: .bottomLeading) {
+                BingePoster(urlString: pick.show.posterUrl, width: nil, height: 288)
+                LinearGradient(colors: [BingeTheme.ink.opacity(0.94), BingeTheme.ink.opacity(0)],
+                               startPoint: .bottom, endPoint: .top)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(pick.show.title.uppercased())
+                        .bingeDisplay(46)
+                        .foregroundStyle(BingeTheme.ground)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(metaLine(pick)).bingeLabel(12).foregroundStyle(BingeTheme.inkFaint)
+                }
+                .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 18)
+            }
+            .frame(height: 288).clipped()
+
+            BingeSourceBand(kicker: engine.sourceCopy.kicker,
+                            statement: engine.sourceCopy.statement)
+
+            BingeStatRow(stats: engine.stats, onDark: true)
+            BingeRule(onDark: true)
+
+            if engine.friends.count < 3 {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("This gets better fast").bingeLabel(11).foregroundStyle(BingeTheme.onDarkMuted)
+                    Text("Add three people you actually know and Tonight starts naming names.")
+                        .bingeBody(14).foregroundStyle(BingeTheme.inkFaint)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button { tab = .friends } label: {
+                        Text("Find your people →").bingeLabel(12)
+                            .foregroundStyle(BingeTheme.accentTint)
+                            .padding(.vertical, 6).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 14)
+                BingeRule(onDark: true)
+            }
+
+            Spacer(minLength: 0)
+
+            VStack(spacing: 10) {
+                NavigationLink {
+                    ShowDetailView(showId: pick.show.tmdbId, showTitle: pick.show.title)
+                } label: {
+                    HStack {
+                        Text("Open \(pick.show.title)").bingeHeadline(15).textCase(.uppercase)
+                        Spacer(minLength: 12)
+                        Text("→").bingeHeadline(15)
+                    }
+                    .padding(.horizontal, 18).padding(.vertical, 17)
+                    .frame(maxWidth: .infinity, minHeight: BingeTheme.minTap)
+                    .background(BingeTheme.ground)
+                    .foregroundStyle(BingeTheme.ink)
+                }
+                .buttonStyle(.plain)
+
+                HStack(spacing: 10) {
+                    BingeOutlineButton(title: "Not tonight", onDark: true) {
+                        Task { await engine.skipCurrent() }
+                    }
+                    BingeOutlineButton(title: "Save it", onDark: true) {
+                        Task { await engine.saveCurrent() }
+                    }
+                }
+            }
+            .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 14)
+        }
+    }
+
+    private func metaLine(_ pick: TonightPick) -> String {
+        var parts: [String] = []
+        if let d = pick.show.firstAirDate, d.count >= 4 { parts.append(String(d.prefix(4))) }
+        parts.append("Series")
+        if pick.show.numberOfEpisodes > 0 { parts.append("\(pick.show.numberOfEpisodes) eps") }
+        if let s = pick.service { parts.append(s) }
+        return parts.joined(separator: " · ")
+    }
+
+    private var weekday: String {
+        let f = DateFormatter(); f.dateFormat = "EEEE"
+        return "\(f.string(from: Date())) night"
+    }
+}

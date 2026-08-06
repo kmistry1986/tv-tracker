@@ -35,46 +35,84 @@ struct RootView: View {
     }
 }
 
+// Custom App Tab enum
+enum AppTab: String, CaseIterable {
+    case home = "Home"
+    case library = "Library"
+    case watchlist = "Watchlist"
+    case friends = "Friends"
+    case activity = "Activity"
+    case you = "You"
+}
+
 struct MainTabView: View {
     @StateObject private var supabase = SupabaseService.shared
+    @State private var selectedTab: AppTab = .home
     
     var body: some View {
-        TabView {
-            HomeView()
-                .tabItem {
-                    Label("Home", systemImage: "house.fill")
+        VStack(spacing: 0) {
+            // Main content
+            Group {
+                switch selectedTab {
+                case .home:
+                    HomeView()
+                case .library:
+                    LibraryView()
+                case .watchlist:
+                    WatchlistView()
+                case .friends:
+                    FriendsView()
+                case .activity:
+                    ActivityFeedView()
+                case .you:
+                    ProfileView()
                 }
-
-            LibraryView()
-                .tabItem {
-                    Label("Library", systemImage: "books.vertical.fill")
-                }
-
-            WatchlistView()
-                .tabItem {
-                    Label("Watchlist", systemImage: "bookmark.fill")
-                }
-
-            FriendsView()
-                .tabItem {
-                    Label("Friends", systemImage: "person.2.fill")
-                }
-
-            ActivityFeedView()
-                .tabItem {
-                    Label("Activity", systemImage: "sparkles")
-                }
-
-            ImportManagementView()
-                .tabItem {
-                    Label("Import", systemImage: "arrow.down.doc")
-                }
-
-            ProfileView()
-                .tabItem {
-                    Label("Profile", systemImage: "person.fill")
-                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            
+            // Custom tab bar
+            CustomTabBar(selection: $selectedTab)
         }
+        .ignoresSafeArea(edges: .bottom)
+    }
+}
+
+struct CustomTabBar: View {
+    @Binding var selection: AppTab
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            Rule(strong: true)
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    ForEach(AppTab.allCases, id: \.self) { tab in
+                        Button {
+                            selection = tab
+                        } label: {
+                            Text(tab.rawValue)
+                                .font(Theme.semi(10))
+                                .tracking(1.2)
+                                .textCase(.uppercase)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 14)
+                                .foregroundStyle(selection == tab ? Theme.accent : Theme.inkMuted)
+                        }
+                        .buttonStyle(.plain)
+                        .contentShape(Rectangle())
+                        
+                        if tab != AppTab.allCases.last {
+                            Rectangle()
+                                .fill(Theme.hairline)
+                                .frame(width: 1)
+                                .padding(.vertical, 8)
+                        }
+                    }
+                }
+            }
+            .background(Theme.ground)
+        }
+        .background(Theme.ground)
     }
 }
 
@@ -84,70 +122,100 @@ struct ProfileView: View {
     @State private var showClearDataConfirmation = false
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                VStack(spacing: 12) {
-                    Image(systemName: "person.crop.circle.fill")
-                        .font(.system(size: 80))
-                        .foregroundColor(.blue)
-
-                    Text(supabase.currentUser?.name ?? "User")
-                        .font(.title2)
-                        .fontWeight(.bold)
-
-                    Text(supabase.currentUser?.email ?? "")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                }
-                .padding(.horizontal)
-                .padding(.top, 10)
-
-                Divider()
-
-                List {
-                    NavigationLink(destination: FriendsView()) {
-                        Label("Friends", systemImage: "person.2")
-                    }
-
-                    Button(action: { showSettings = true }) {
-                        Label("Streaming Platforms", systemImage: "play.tv")
-                            .foregroundColor(.primary)
-                    }
-
-                    NavigationLink(destination: EmptyView()) {
-                        Label("Settings", systemImage: "gear")
-                    }
-
-                    Button(action: { showClearDataConfirmation = true }) {
-                        Label("Clear My Data", systemImage: "trash")
-                            .foregroundColor(.red)
-                    }
-                }
-
+        VStack(spacing: 0) {
+            // Header
+            HStack(alignment: .lastTextBaseline) {
+                Text("YOU").displayTitle(34)
                 Spacer()
-
-                Button(action: signOut) {
-                    Text("Sign Out")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color.red)
-                        .foregroundColor(.white)
-                        .cornerRadius(8)
+            }
+            .padding(.horizontal, Theme.gutter)
+            .padding(.top, 8)
+            .padding(.bottom, 14)
+            
+            Rule(strong: true)
+            
+            // Profile section
+            HStack(spacing: 14) {
+                Text((supabase.currentUser?.name ?? "U").prefix(2).uppercased())
+                    .headline(14)
+                    .frame(width: 44, height: 44)
+                    .background(Theme.ink)
+                    .foregroundStyle(Theme.ground)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(supabase.currentUser?.name ?? "User")
+                        .headline(18)
+                    Text(supabase.currentUser?.email ?? "")
+                        .bodyCopy(12)
+                        .foregroundStyle(Theme.inkMuted)
                 }
-                .padding()
+                
+                Spacer()
             }
-            .navigationTitle("Profile")
-            .sheet(isPresented: $showSettings) {
-                SettingsView()
-            }
-            .alert("Clear All Data?", isPresented: $showClearDataConfirmation) {
-                Button("Delete", role: .destructive) {
-                    clearUserData()
+            .padding(.horizontal, Theme.gutter)
+            .padding(.vertical, Theme.Space.lg)
+            
+            Rule(strong: true)
+            
+            ScrollView {
+                VStack(spacing: 0) {
+                    // Streaming Platforms
+                    Button(action: { showSettings = true }) {
+                        HStack {
+                            Text("Streaming Platforms")
+                                .headline(15)
+                            Spacer()
+                            Text("→")
+                                .font(Theme.heavy(15))
+                                .foregroundStyle(Theme.inkMuted)
+                        }
+                        .padding(.horizontal, Theme.gutter)
+                        .padding(.vertical, Theme.Space.lg)
+                        .foregroundStyle(Theme.ink)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Rule()
+                    
+                    // Clear Data
+                    Button(action: { showClearDataConfirmation = true }) {
+                        HStack {
+                            Text("Clear My Data")
+                                .headline(15)
+                            Spacer()
+                        }
+                        .padding(.horizontal, Theme.gutter)
+                        .padding(.vertical, Theme.Space.lg)
+                        .foregroundStyle(Theme.accent)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Rule()
                 }
-                Button("Cancel", role: .cancel) { }
-            } message: {
-                Text("This will permanently delete all your library, watchlist, and episode data. This action cannot be undone.")
             }
+            
+            Spacer()
+            
+            // Sign out button
+            PrimaryButton(title: "Sign Out") {
+                signOut()
+            }
+            .padding(.horizontal, Theme.gutter)
+            .padding(.bottom, Theme.Space.lg)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Theme.ground)
+        .foregroundStyle(Theme.ink)
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
+        }
+        .alert("Clear All Data?", isPresented: $showClearDataConfirmation) {
+            Button("Delete", role: .destructive) {
+                clearUserData()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This will permanently delete all your library, watchlist, and episode data. This action cannot be undone.")
         }
     }
 

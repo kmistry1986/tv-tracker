@@ -16,59 +16,161 @@ struct HomeView: View {
     @State private var showSearchOverlay = false
 
     var body: some View {
-        NavigationStack {
-            ZStack(alignment: .top) {
-                Color(.systemBackground).ignoresSafeArea()
-
+        VStack(spacing: 0) {
+            // Header
+            HStack(alignment: .lastTextBaseline) {
+                Text("HOME").displayTitle(34)
+                Spacer()
+            }
+            .padding(.horizontal, Theme.gutter)
+            .padding(.top, 8)
+            .padding(.bottom, 14)
+            
+            Rule(strong: true)
+            
+            ScrollView {
                 VStack(spacing: 0) {
-                    // Search section that expands
-                    VStack(spacing: 0) {
-                        // Search bar (hidden when search is active)
-                        if !showSearchOverlay {
-                            searchButtonSection
-                                .padding(.horizontal)
-                                .padding(.top, 10)
-                        }
-
-                        // Search results expand below the bar
-                        if showSearchOverlay {
-                            searchResultsSection
-                        }
+                    // Stats section
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Your Stats").label(11).foregroundStyle(Theme.inkMuted)
+                        
+                        StatRow(stats: [
+                            .init(value: "\(libraryShowCount + libraryMovieCount)", label: "Library"),
+                            .init(value: "\(watchlistShowCount + watchlistMovieCount)", label: "Watchlist"),
+                            .init(value: "\(ratedCount)", label: "Rated", accent: true)
+                        ])
                     }
-                    .background(Color(.systemBackground))
-                    .zIndex(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Theme.gutter)
+                    .padding(.vertical, Theme.Space.lg)
                     
-                    // Main content (hidden when searching)
-                    if !showSearchOverlay {
-                        ScrollView {
-                            VStack(spacing: 24) {
-                                if !partiallyWatchedShows.isEmpty {
-                                    continueWatchingSection
+                    Rule(strong: true)
+                    
+                    // Continue Watching
+                    if !partiallyWatchedShows.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Continue Watching").label(11).foregroundStyle(Theme.inkMuted)
+                                .padding(.horizontal, Theme.gutter)
+                            
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 12) {
+                                    ForEach(partiallyWatchedShows.prefix(10), id: \.id) { show in
+                                        NavigationLink(destination: ShowDetailView(showId: show.showId, showTitle: show.showTitle)) {
+                                            VStack(alignment: .leading, spacing: 8) {
+                                                if let imageUrl = show.posterUrl, let url = URL(string: imageUrl) {
+                                                    Poster(url: url, width: 100, height: 150)
+                                                } else {
+                                                    Poster(url: nil, width: 100, height: 150)
+                                                }
+                                                
+                                                VStack(alignment: .leading, spacing: 4) {
+                                                    Text(show.showTitle)
+                                                        .headline(13)
+                                                        .lineLimit(2)
+                                                        .frame(width: 100, alignment: .leading)
+                                                    
+                                                    if let lastEpisode = show.lastWatchedEpisode {
+                                                        Text(lastEpisode)
+                                                            .label(9)
+                                                            .foregroundStyle(Theme.accent)
+                                                    }
+                                                    
+                                                    Text("\(show.watchedEpisodes)/\(show.totalEpisodes)")
+                                                        .bodyCopy(10)
+                                                        .foregroundStyle(Theme.inkMuted)
+                                                }
+                                            }
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
                                 }
-
-                                if !trendingShows.isEmpty {
-                                    trendingShowsSection
-                                }
-
-                                if !trendingMovies.isEmpty {
-                                    trendingMoviesSection
-                                }
-
-                                statsSection
+                                .padding(.horizontal, Theme.gutter)
                             }
-                            .padding(.horizontal)
-                            .padding(.top, 24)
                         }
+                        .padding(.vertical, Theme.Space.lg)
+                        
+                        Rule(strong: true)
+                    }
+                    
+                    // Trending Shows
+                    if !trendingShows.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Trending TV Shows").label(11).foregroundStyle(Theme.inkMuted)
+                                .padding(.horizontal, Theme.gutter)
+                            
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 12) {
+                                    ForEach(trendingShows.prefix(10), id: \.id) { show in
+                                        if let showId = show.id {
+                                            NavigationLink(destination: TVShowDetailView(showId: showId)) {
+                                                VStack(alignment: .leading, spacing: 6) {
+                                                    if let imageUrl = show.imageUrl, let url = URL(string: imageUrl) {
+                                                        Poster(url: url, width: 100, height: 150)
+                                                    } else {
+                                                        Poster(url: nil, width: 100, height: 150)
+                                                    }
+                                                    
+                                                    Text(show.displayTitle)
+                                                        .bodyCopy(11)
+                                                        .lineLimit(2)
+                                                        .frame(width: 100, alignment: .leading)
+                                                }
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                }
+                                .padding(.horizontal, Theme.gutter)
+                            }
+                        }
+                        .padding(.vertical, Theme.Space.lg)
+                        
+                        Rule(strong: true)
+                    }
+                    
+                    // Trending Movies
+                    if !trendingMovies.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Trending Movies").label(11).foregroundStyle(Theme.inkMuted)
+                                .padding(.horizontal, Theme.gutter)
+                            
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 12) {
+                                    ForEach(trendingMovies.prefix(10), id: \.id) { movie in
+                                        if let movieId = movie.id {
+                                            NavigationLink(destination: MovieDetailView(movieId: movieId)) {
+                                                VStack(alignment: .leading, spacing: 6) {
+                                                    if let imageUrl = movie.imageUrl, let url = URL(string: imageUrl) {
+                                                        Poster(url: url, width: 100, height: 150)
+                                                    } else {
+                                                        Poster(url: nil, width: 100, height: 150)
+                                                    }
+                                                    
+                                                    Text(movie.displayTitle)
+                                                        .bodyCopy(11)
+                                                        .lineLimit(2)
+                                                        .frame(width: 100, alignment: .leading)
+                                                }
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                }
+                                .padding(.horizontal, Theme.gutter)
+                            }
+                        }
+                        .padding(.vertical, Theme.Space.lg)
                     }
                 }
             }
-            .navigationTitle("TV Tracker")
-            .navigationBarTitleDisplayMode(.inline)
-            .onAppear {
-                loadTrendingContent()
-                loadStats()
-                loadPartiallyWatched()
-            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Theme.ground)
+        .foregroundStyle(Theme.ink)
+        .onAppear {
+            loadTrendingContent()
+            loadStats()
+            loadPartiallyWatched()
         }
     }
     
@@ -262,9 +364,9 @@ struct HomeView: View {
             HStack(spacing: 12) {
                 // Library Card
                 VStack(spacing: 8) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 4) {
                         Image(systemName: "books.vertical.fill")
-                            .font(.system(size: 20))
+                            .font(.system(size: 14))
                             .foregroundColor(.blue)
                         Text("Library")
                             .font(.caption)
@@ -272,7 +374,7 @@ struct HomeView: View {
                         Spacer()
                     }
 
-                    HStack(spacing: 8) {
+                    HStack(spacing: 4) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Shows")
                                 .font(.caption2)
@@ -281,6 +383,7 @@ struct HomeView: View {
                                 .font(.title3)
                                 .fontWeight(.semibold)
                         }
+                        .frame(maxWidth: .infinity)
                         Divider()
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Movies")
@@ -290,18 +393,18 @@ struct HomeView: View {
                                 .font(.title3)
                                 .fontWeight(.semibold)
                         }
-                        Spacer()
+                        .frame(maxWidth: .infinity)
                     }
                 }
-                .padding()
+                .padding(10)
                 .background(Color(.systemGray6))
                 .cornerRadius(8)
 
                 // Watchlist Card
                 VStack(spacing: 8) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 4) {
                         Image(systemName: "bookmark.fill")
-                            .font(.system(size: 20))
+                            .font(.system(size: 14))
                             .foregroundColor(.green)
                         Text("Watchlist")
                             .font(.caption)
@@ -309,7 +412,7 @@ struct HomeView: View {
                         Spacer()
                     }
 
-                    HStack(spacing: 8) {
+                    HStack(spacing: 4) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Shows")
                                 .font(.caption2)
@@ -318,6 +421,7 @@ struct HomeView: View {
                                 .font(.title3)
                                 .fontWeight(.semibold)
                         }
+                        .frame(maxWidth: .infinity)
                         Divider()
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Movies")
@@ -327,18 +431,18 @@ struct HomeView: View {
                                 .font(.title3)
                                 .fontWeight(.semibold)
                         }
-                        Spacer()
+                        .frame(maxWidth: .infinity)
                     }
                 }
-                .padding()
+                .padding(10)
                 .background(Color(.systemGray6))
                 .cornerRadius(8)
 
                 // Ratings Card
                 VStack(spacing: 8) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 4) {
                         Image(systemName: "star.fill")
-                            .font(.system(size: 20))
+                            .font(.system(size: 14))
                             .foregroundColor(.orange)
                         Text("Ratings")
                             .font(.caption)
@@ -346,28 +450,29 @@ struct HomeView: View {
                         Spacer()
                     }
 
-                    HStack(spacing: 8) {
+                    HStack(spacing: 4) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Rated")
                                 .font(.caption2)
                                 .foregroundColor(.gray)
                             Text(String(ratedCount))
-                                .font(.title3)
+                                .font(.callout)
                                 .fontWeight(.semibold)
                         }
+                        .frame(maxWidth: .infinity)
                         Divider()
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Complete")
-                                .font(.caption2)
+                                .font(.system(size: 9))
                                 .foregroundColor(.gray)
                             Text(totalLibraryCount > 0 ? "\(Int(Double(ratedCount) / Double(totalLibraryCount) * 100))%" : "0%")
-                                .font(.title3)
+                                .font(.callout)
                                 .fontWeight(.semibold)
                         }
-                        Spacer()
+                        .frame(maxWidth: .infinity)
                     }
                 }
-                .padding()
+                .padding(10)
                 .background(Color(.systemGray6))
                 .cornerRadius(8)
             }
@@ -762,9 +867,9 @@ struct HomeSearchResultRow: View {
         HStack(spacing: 12) {
             // Library Card
             VStack(spacing: 8) {
-                HStack(spacing: 8) {
+                HStack(spacing: 4) {
                     Image(systemName: "books.vertical.fill")
-                        .font(.system(size: 20))
+                        .font(.system(size: 14))
                         .foregroundColor(.blue)
                     Text("Library")
                         .font(.caption)
@@ -772,7 +877,7 @@ struct HomeSearchResultRow: View {
                     Spacer()
                 }
 
-                HStack(spacing: 8) {
+                HStack(spacing: 4) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Shows")
                             .font(.caption2)
@@ -781,6 +886,7 @@ struct HomeSearchResultRow: View {
                             .font(.title3)
                             .fontWeight(.semibold)
                     }
+                    .frame(maxWidth: .infinity)
                     Divider()
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Movies")
@@ -790,18 +896,18 @@ struct HomeSearchResultRow: View {
                             .font(.title3)
                             .fontWeight(.semibold)
                     }
-                    Spacer()
+                    .frame(maxWidth: .infinity)
                 }
             }
-            .padding()
+            .padding(10)
             .background(Color(.systemGray6))
             .cornerRadius(8)
 
             // Watchlist Card
             VStack(spacing: 8) {
-                HStack(spacing: 8) {
+                HStack(spacing: 4) {
                     Image(systemName: "bookmark.fill")
-                        .font(.system(size: 20))
+                        .font(.system(size: 14))
                         .foregroundColor(.green)
                     Text("Watchlist")
                         .font(.caption)
@@ -809,7 +915,7 @@ struct HomeSearchResultRow: View {
                     Spacer()
                 }
 
-                HStack(spacing: 8) {
+                HStack(spacing: 4) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Shows")
                             .font(.caption2)
@@ -818,6 +924,7 @@ struct HomeSearchResultRow: View {
                             .font(.title3)
                             .fontWeight(.semibold)
                     }
+                    .frame(maxWidth: .infinity)
                     Divider()
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Movies")
@@ -827,18 +934,18 @@ struct HomeSearchResultRow: View {
                             .font(.title3)
                             .fontWeight(.semibold)
                     }
-                    Spacer()
+                    .frame(maxWidth: .infinity)
                 }
             }
-            .padding()
+            .padding(10)
             .background(Color(.systemGray6))
             .cornerRadius(8)
 
             // Ratings Card
             VStack(spacing: 8) {
-                HStack(spacing: 8) {
+                HStack(spacing: 4) {
                     Image(systemName: "star.fill")
-                        .font(.system(size: 20))
+                        .font(.system(size: 14))
                         .foregroundColor(.orange)
                     Text("Ratings")
                         .font(.caption)
@@ -846,28 +953,29 @@ struct HomeSearchResultRow: View {
                     Spacer()
                 }
 
-                HStack(spacing: 8) {
+                HStack(spacing: 4) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Rated")
                             .font(.caption2)
                             .foregroundColor(.gray)
                         Text("4")
-                            .font(.title3)
+                            .font(.callout)
                             .fontWeight(.semibold)
                     }
+                    .frame(maxWidth: .infinity)
                     Divider()
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Complete")
-                            .font(.caption2)
+                            .font(.system(size: 9))
                             .foregroundColor(.gray)
                         Text("23%")
-                            .font(.title3)
+                            .font(.callout)
                             .fontWeight(.semibold)
                     }
-                    Spacer()
+                    .frame(maxWidth: .infinity)
                 }
             }
-            .padding()
+            .padding(10)
             .background(Color(.systemGray6))
             .cornerRadius(8)
         }

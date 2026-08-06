@@ -249,6 +249,11 @@ class SupabaseService: NSObject, ObservableObject {
         let endpoint = "\(supabaseURL)/rest/v1/tv_shows?tmdb_id=eq.\(tmdbId)"
         return try await fetchSingle(endpoint: endpoint)
     }
+    
+    func fetchShowById(id: Int) async throws -> TVShow {
+        let endpoint = "\(supabaseURL)/rest/v1/tv_shows?id=eq.\(id)"
+        return try await fetchSingle(endpoint: endpoint)
+    }
 
     func insertShow(show: TVShow) async throws {
         let endpoint = "\(supabaseURL)/rest/v1/tv_shows"

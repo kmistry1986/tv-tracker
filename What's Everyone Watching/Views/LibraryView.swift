@@ -89,38 +89,52 @@ struct LibraryView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                Picker("", selection: $selectedTab) {
-                    Text("All (\(libraryShows.count + libraryMovies.count))").tag(2)
-                    Text("Shows (\(libraryShows.count))").tag(0)
-                    Text("Movies (\(libraryMovies.count))").tag(1)
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.top, 10)
+        VStack(spacing: 0) {
+            // Header
+            HStack(alignment: .lastTextBaseline) {
+                Text("LIBRARY").displayTitle(34)
+                Spacer()
+            }
+            .padding(.horizontal, Theme.gutter)
+            .padding(.top, 8)
+            .padding(.bottom, 14)
+            
+            Rule(strong: true)
+            
+            // Segmented control
+            RuledSegmented(options: [
+                "All (\(libraryShows.count + libraryMovies.count))",
+                "Shows (\(libraryShows.count))",
+                "Movies (\(libraryMovies.count))"
+            ], selection: Binding(
+                get: { selectedTab },
+                set: { selectedTab = $0 == 0 ? 2 : ($0 == 1 ? 0 : 1) }
+            ))
+            .padding(.horizontal, Theme.gutter)
+            .padding(.vertical, 12)
+            
+            Rule(strong: true)
 
-                // Search bar
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.gray)
-                    TextField("Search library...", text: $searchText)
-                        .textFieldStyle(.plain)
-                        .padding(0)
+            // Search bar
+            HStack(spacing: Theme.Space.sm) {
+                TextField("Search library", text: $searchText)
+                    .font(Theme.body(15))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
 
-                    if !searchText.isEmpty {
-                        Button(action: { searchText = "" }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.gray)
-                        }
+                if !searchText.isEmpty {
+                    Button(action: { searchText = "" }) {
+                        Text("×").font(Theme.heavy(24)).foregroundStyle(Theme.inkMuted)
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color(.systemGray6))
-                .clipShape(RoundedRectangle(cornerRadius: 20))
-                .padding(.horizontal)
-                .padding(.bottom, 8)
+            }
+            .padding(Theme.Space.md)
+            .overlay(Rectangle().stroke(Theme.ink, lineWidth: 1))
+            .padding(.horizontal, Theme.gutter)
+            .padding(.vertical, 12)
+            
+            Rule(strong: true)
 
                 if let errorMessage = errorMessage {
                     VStack(spacing: 12) {
@@ -170,7 +184,8 @@ struct LibraryView: View {
                         }
                 }
             }
-            .navigationTitle("My Library")
+            .background(Theme.ground)
+            .foregroundStyle(Theme.ink)
             .onAppear {
                 loadLibrary()
             }
@@ -221,7 +236,6 @@ struct LibraryView: View {
                     Text("No episodes watched for \"\(title)\". Remove from library?")
                 }
             }
-        }
     }
     
     private var showsList: some View {
@@ -248,117 +262,78 @@ struct LibraryView: View {
                 VStack(spacing: 0) {
                     List {
                         ForEach(filteredShows, id: \.id) { show in
-                            ZStack {
-                                NavigationLink(destination: ShowDetailView(showId: show.showId, showTitle: show.showTitle)) {
-                                    HStack(spacing: 12) {
-                                        if let imageUrl = show.posterUrl, let url = URL(string: imageUrl) {
-                                            AsyncImage(url: url) { image in
-                                                image
-                                                    .resizable()
-                                                    .scaledToFill()
-                                            } placeholder: {
-                                                Color.gray
-                                            }
+                            NavigationLink(destination: ShowDetailView(showId: show.showId, showTitle: show.showTitle)) {
+                                HStack(spacing: 12) {
+                                    if let imageUrl = show.posterUrl, let url = URL(string: imageUrl) {
+                                        AsyncImage(url: url) { image in
+                                            image
+                                                .resizable()
+                                                .scaledToFill()
+                                        } placeholder: {
+                                            Color.gray
+                                        }
+                                        .frame(width: 50, height: 75)
+                                        .cornerRadius(4)
+                                    } else {
+                                        Color.gray
                                             .frame(width: 50, height: 75)
                                             .cornerRadius(4)
+                                    }
+
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(show.showTitle)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.primary)
+
+                                        if let rating = show.rating {
+                                            Text("\(String(repeating: "★", count: rating))\(String(repeating: "☆", count: 10 - rating)) \(rating)/10")
+                                                .font(.caption)
+                                                .foregroundColor(.orange)
                                         } else {
-                                            Color.gray
-                                                .frame(width: 50, height: 75)
-                                                .cornerRadius(4)
-                                        }
-
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(show.showTitle)
-                                                .fontWeight(.semibold)
-                                                .foregroundColor(.primary)
-
-                                            if let rating = show.rating {
-                                                Text("\(String(repeating: "★", count: rating))\(String(repeating: "☆", count: 10 - rating)) \(rating)/10")
+                                            Button(action: {
+                                                selectedShowForRating = (showId: show.showId, title: show.showTitle, isMovie: false)
+                                                showRatingModal = true
+                                            }) {
+                                                Text("Not yet rated")
                                                     .font(.caption)
-                                                    .foregroundColor(.orange)
-                                            } else {
-                                                Button(action: {
-                                                    selectedShowForRating = (showId: show.showId, title: show.showTitle, isMovie: false)
-                                                    showRatingModal = true
-                                                }) {
-                                                    Text("Not yet rated")
-                                                        .font(.caption)
-                                                        .foregroundColor(.blue)
-                                                }
-                                            }
-
-                                            if let releaseDate = show.firstAirDate, !releaseDate.isEmpty {
-                                                Text("Released: \(formatReleaseDate(releaseDate))")
-                                                    .font(.caption)
-                                                    .foregroundColor(.gray)
-                                            }
-
-                                            if let review = show.review, !review.isEmpty {
-                                                Text(review)
-                                                    .font(.caption)
-                                                    .foregroundColor(.gray)
-                                                    .lineLimit(2)
+                                                    .foregroundColor(.blue)
                                             }
                                         }
 
-                                        VStack(alignment: .trailing, spacing: 6) {
-                                            if show.watchedEpisodes < show.totalEpisodes {
-                                                if let lastEpisode = show.lastWatchedEpisode {
-                                                    Text(lastEpisode)
-                                                        .font(.caption)
-                                                        .fontWeight(.semibold)
-                                                        .foregroundColor(.blue)
-                                                }
-                                            } else {
-                                                Image(systemName: "checkmark.circle.fill")
-                                                    .font(.system(size: 16))
-                                                    .foregroundColor(.green)
-                                            }
-
-                                            Text("\(show.watchedEpisodes)/\(show.totalEpisodes) episodes")
+                                        if let releaseDate = show.firstAirDate, !releaseDate.isEmpty {
+                                            Text("Released: \(formatReleaseDate(releaseDate))")
                                                 .font(.caption)
                                                 .foregroundColor(.gray)
                                         }
-                                    }
-                                    .padding(.vertical, 4)
-                                }
 
-                                if show.watchedEpisodes < show.totalEpisodes {
-                                    HStack(spacing: 8) {
-                                        Spacer()
-
-                                        Button(action: {
-                                            selectedShowIdForModal = show.showId
-                                            selectedShowTitleForModal = show.showTitle
-                                            showCompleteShowModal = true
-                                        }) {
-                                            Text("Complete Show")
-                                                .font(.caption2)
-                                                .fontWeight(.semibold)
-                                                .foregroundColor(.white)
-                                                .padding(.horizontal, 8)
-                                                .padding(.vertical, 4)
-                                                .background(Color.blue)
-                                                .cornerRadius(6)
-                                        }
-
-                                        Button(action: {
-                                            selectedShowIdForModal = show.showId
-                                            selectedShowTitleForModal = show.showTitle
-                                            showCompleteSeasonModal = true
-                                        }) {
-                                            Text("Complete Seasons")
-                                                .font(.caption2)
-                                                .fontWeight(.semibold)
-                                                .foregroundColor(.white)
-                                                .padding(.horizontal, 8)
-                                                .padding(.vertical, 4)
-                                                .background(Color.purple)
-                                                .cornerRadius(6)
+                                        if let review = show.review, !review.isEmpty {
+                                            Text(review)
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
+                                                .lineLimit(2)
                                         }
                                     }
-                                    .padding(.trailing, 12)
+
+                                    VStack(alignment: .trailing, spacing: 6) {
+                                        if show.watchedEpisodes < show.totalEpisodes {
+                                            if let lastEpisode = show.lastWatchedEpisode {
+                                                Text(lastEpisode)
+                                                    .font(.caption)
+                                                    .fontWeight(.semibold)
+                                                    .foregroundColor(.blue)
+                                            }
+                                        } else {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .font(.system(size: 16))
+                                                .foregroundColor(.green)
+                                        }
+
+                                        Text("\(show.watchedEpisodes)/\(show.totalEpisodes) episodes")
+                                            .font(.caption)
+                                            .foregroundColor(.gray)
+                                    }
                                 }
+                                .padding(.vertical, 4)
                             }
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
