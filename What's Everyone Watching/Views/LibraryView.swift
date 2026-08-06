@@ -655,8 +655,12 @@ struct LibraryView: View {
         let formatter = ISO8601DateFormatter()
         if let date = formatter.date(from: dateStr) {
             let displayFormatter = DateFormatter()
-            displayFormatter.dateFormat = "M/d/yyyy"
+            displayFormatter.dateFormat = "yyyy"
             return displayFormatter.string(from: date)
+        }
+        // Fallback: extract year if it's in YYYY-MM-DD format
+        if dateStr.count >= 4 {
+            return String(dateStr.prefix(4))
         }
         return dateStr
     }
@@ -664,17 +668,9 @@ struct LibraryView: View {
     private func formatReleaseDate(_ dateStr: String?) -> String {
         guard let dateStr = dateStr, !dateStr.isEmpty else { return "" }
 
-        // Try ISO8601 format (YYYY-MM-DD)
-        let isoFormatter = ISO8601DateFormatter()
-        if let date = isoFormatter.date(from: dateStr) {
-            let displayFormatter = DateFormatter()
-            displayFormatter.dateFormat = "M/d/yyyy"
-            return displayFormatter.string(from: date)
-        }
-
-        // If only year (YYYY), return as is or format with placeholder date
-        if dateStr.count == 4, Int(dateStr) != nil {
-            return dateStr
+        // Extract year from YYYY-MM-DD or return if already YYYY
+        if dateStr.count >= 4 {
+            return String(dateStr.prefix(4))
         }
 
         return dateStr
