@@ -399,6 +399,8 @@ struct BingeShowDetailView: View {
             _ = try await (move, remove)
         } else if !turningOn && watched.isEmpty {
             try await supabase.removeFromLibraryIfNoWatchedEpisodes(userId: userId, showId: dbShowId ?? tmdbId)
+            // Add back to watchlist when removing all episodes
+            try? await supabase.addToWatchlistShow(userId: userId, showId: dbShowId ?? tmdbId)
         }
     }
 
@@ -453,7 +455,7 @@ struct BingeShowDetailView: View {
         async let seasonOps = setAllSeasons(watched: true)
         async let libraryOp = updateLibraryStateForFinish(wasEmpty: wasEmpty, userId: userId)
 
-        _ = try? await (seasonOps, libraryOp)
+        _ = await (seasonOps, libraryOp)
 
         isWorking = false
         if thenRate || rating == nil { showRatingSheet = true }
@@ -461,16 +463,19 @@ struct BingeShowDetailView: View {
 
     private func setAllSeasons(watched on: Bool) async {
         guard let userId = supabase.currentUser?.id else { return }
+        let showTitle = details?.name
+        let episodeData = seasons.map { ($0, episodesBySeason[$0] ?? []) }
+
         await withTaskGroup(of: Void.self) { group in
-            for season in seasons {
+            for (season, episodes) in episodeData {
                 group.addTask {
-                    for ep in episodesBySeason[season] ?? [] {
+                    for ep in episodes {
                         let episode = Episode(id: ep.id, showId: tmdbId, tmdbId: ep.id,
                                             seasonNumber: season, episodeNumber: ep.episodeNumber,
                                             name: ep.name, overview: ep.overview ?? "",
                                             airDate: ep.airDate, userId: userId,
                                             watched: on, watchedAt: on ? ISO8601DateFormatter().string(from: Date()) : nil,
-                                            showTitle: details?.name)
+                                            showTitle: showTitle)
                         try? await supabase.insertEpisode(episode: episode)
                     }
                 }
