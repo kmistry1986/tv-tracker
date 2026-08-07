@@ -70,7 +70,7 @@ final class BingeYouEngine: ObservableObject {
             } else {
                 try await supabase.removeUserShow(id: item.id)
             }
-            await load()
+            library.removeAll { $0.id == item.id }
         } catch {
             print("Failed to delete item: \(error)")
         }
