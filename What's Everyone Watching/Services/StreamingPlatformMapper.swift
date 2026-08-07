@@ -25,7 +25,7 @@ class StreamingPlatformMapper {
         StreamingPlatform(
             id: 384,
             displayName: "HBO Max",
-            tmdbProviderNames: ["HBO Max"]
+            tmdbProviderNames: ["HBO Max", "Max"]
         ),
         StreamingPlatform(
             id: 15,
@@ -46,11 +46,6 @@ class StreamingPlatformMapper {
             id: 531,
             displayName: "Paramount+",
             tmdbProviderNames: ["Paramount Plus", "Paramount+"]
-        ),
-        StreamingPlatform(
-            id: 1899,
-            displayName: "Max",
-            tmdbProviderNames: ["Max"]
         ),
         StreamingPlatform(
             id: 372,
