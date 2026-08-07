@@ -132,7 +132,7 @@ final class BingeYouEngine: ObservableObject {
 
 struct BingeYouView: View {
     @EnvironmentObject private var supabase: SupabaseService
-    @StateObject private var engine = BingeYouEngine()
+    @ObservedObject var engine: BingeYouEngine
     @Binding var tab: BingeTab
     @State private var section = 0
     @State private var showSettings = false
@@ -167,7 +167,6 @@ struct BingeYouView: View {
             }
         }
         .task { await engine.load() }
-        .onAppear { Task { await engine.load() } }
     }
 
     // MARK: Profile row

@@ -11,6 +11,7 @@ import SwiftUI
 struct BingeMainTabView: View {
     @StateObject private var supabase = SupabaseService.shared
     @StateObject private var searchEngine = BingeSearchEngine()
+    @StateObject private var youEngine = BingeYouEngine()
     @State private var tab: BingeTab = .tonight
     /// Carried WITH the presentation. A plain @State array read by a
     /// .sheet(isPresented:) closure can be captured while it's still empty,
@@ -27,7 +28,7 @@ struct BingeMainTabView: View {
             case .search:
                 NavigationStack { BingeSearchView(engine: searchEngine, tab: $tab) }
             case .you:
-                NavigationStack { BingeYouView(tab: $tab) }
+                NavigationStack { BingeYouView(tab: $tab, engine: youEngine) }
             }
         }
         .environmentObject(supabase)
@@ -41,6 +42,8 @@ struct BingeMainTabView: View {
         }
         .task {
             await checkAndShowRatingPrompt()
+            // Preload You tab data in background
+            Task { await youEngine.load() }
         }
     }
 
