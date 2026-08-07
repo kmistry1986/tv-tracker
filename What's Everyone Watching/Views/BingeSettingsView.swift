@@ -97,7 +97,7 @@ struct BingeSettingsView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, BingeTheme.gutter).padding(.top, 20).padding(.bottom, 14)
+            .padding(.horizontal, BingeTheme.gutter).padding(.top, 4).padding(.bottom, 14)
             BingeRule(strong: true)
 
             ScrollView {

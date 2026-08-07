@@ -252,7 +252,15 @@ class SupabaseService: NSObject, ObservableObject {
     
     func fetchShowById(id: Int) async throws -> TVShow {
         let endpoint = "\(supabaseURL)/rest/v1/tv_shows?id=eq.\(id)"
-        return try await fetchSingle(endpoint: endpoint)
+        print("🔍 Fetching show with id: \(id)")
+        do {
+            let result: TVShow = try await fetchSingle(endpoint: endpoint)
+            print("✅ Show fetch succeeded: \(result.title)")
+            return result
+        } catch {
+            print("❌ Show fetch failed for id \(id): \(error.localizedDescription)")
+            throw error
+        }
     }
 
     func insertShow(show: TVShow) async throws {
@@ -530,7 +538,15 @@ class SupabaseService: NSObject, ObservableObject {
     
     func fetchWatchlistShows(userId: String) async throws -> [WatchlistShow] {
         let endpoint = "\(supabaseURL)/rest/v1/watchlist_shows?user_id=eq.\(userId)&order=priority.asc,added_at.desc"
-        return try await fetch(endpoint: endpoint)
+        print("📋 Fetching watchlist for user: \(userId)")
+        do {
+            let result: [WatchlistShow] = try await fetch(endpoint: endpoint)
+            print("✅ Watchlist fetch succeeded: \(result.count) items")
+            return result
+        } catch {
+            print("❌ Watchlist fetch failed: \(error.localizedDescription)")
+            throw error
+        }
     }
 
     func isShowInWatchlist(userId: String, showId: Int) async throws -> Bool {
@@ -563,9 +579,16 @@ class SupabaseService: NSObject, ObservableObject {
     }
     
     func addToWatchlistShow(userId: String, showId: Int, priority: String = "medium", notes: String? = nil) async throws {
+        // Check if already in watchlist to prevent duplicates
+        let existing = try? await isShowInWatchlist(userId: userId, showId: showId)
+        if existing == true {
+            print("Show already in watchlist, skipping duplicate insert")
+            return
+        }
+
         let endpoint = "\(supabaseURL)/rest/v1/watchlist_shows"
         print("Adding to watchlist with userId: '\(userId)'")
-        
+
         struct WatchlistShowInsert: Encodable {
             let user_id: String
             let show_id: Int
@@ -573,7 +596,7 @@ class SupabaseService: NSObject, ObservableObject {
             let notes: String?
             let added_at: String
         }
-        
+
         let body = WatchlistShowInsert(
             user_id: userId,
             show_id: showId,
@@ -585,9 +608,16 @@ class SupabaseService: NSObject, ObservableObject {
     }
     
     func addToWatchlistMovie(userId: String, movieId: Int, priority: String = "medium", notes: String? = nil) async throws {
+        // Check if already in watchlist to prevent duplicates
+        let existing = try? await isMovieInWatchlist(userId: userId, movieId: movieId)
+        if existing == true {
+            print("Movie already in watchlist, skipping duplicate insert")
+            return
+        }
+
         let endpoint = "\(supabaseURL)/rest/v1/watchlist_movies"
         print("Adding to watchlist with userId: '\(userId)'")
-        
+
         struct WatchlistMovieInsert: Encodable {
             let user_id: String
             let movie_id: Int
@@ -595,7 +625,7 @@ class SupabaseService: NSObject, ObservableObject {
             let notes: String?
             let added_at: String
         }
-        
+
         let body = WatchlistMovieInsert(
             user_id: userId,
             movie_id: movieId,
@@ -819,17 +849,15 @@ class SupabaseService: NSObject, ObservableObject {
     }
 
     func updateUserProfile(userId: String, displayName: String? = nil, bio: String? = nil, isPublic: Bool? = nil) async throws {
-        let endpoint = "\(supabaseURL)/rest/v1/user_profiles"
+        let endpoint = "\(supabaseURL)/rest/v1/user_profiles?user_id=eq.\(userId)"
 
-        struct UserProfileUpsert: Encodable {
-            let user_id: String
+        struct UserProfileUpdate: Encodable {
             let display_name: String?
             let bio: String?
             let is_public: Bool?
 
             func encode(to encoder: Encoder) throws {
                 var container = encoder.container(keyedBy: CodingKeys.self)
-                try container.encode(user_id, forKey: .user_id)
                 if let displayName = display_name {
                     try container.encode(displayName, forKey: .display_name)
                 }
@@ -838,13 +866,10 @@ class SupabaseService: NSObject, ObservableObject {
                 }
                 if let isPublic = is_public {
                     try container.encode(isPublic, forKey: .is_public)
-                } else {
-                    try container.encode(true, forKey: .is_public)
                 }
             }
 
             enum CodingKeys: String, CodingKey {
-                case user_id
                 case display_name
                 case bio
                 case is_public
@@ -852,21 +877,28 @@ class SupabaseService: NSObject, ObservableObject {
         }
 
         var request = URLRequest(url: URL(string: endpoint)!)
-        request.httpMethod = "POST"
+        request.httpMethod = "PATCH"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("resolution=merge-duplicates", forHTTPHeaderField: "Prefer")
         request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
         if !authToken.isEmpty {
             request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
         }
 
-        let body = UserProfileUpsert(user_id: userId, display_name: displayName, bio: bio, is_public: isPublic)
+        let body = UserProfileUpdate(display_name: displayName, bio: bio, is_public: isPublic)
         request.httpBody = try JSONEncoder().encode(body)
 
         let (_, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 201 else {
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+
+        if statusCode == 204 || statusCode == 200 {
+            return
+        }
+
+        if statusCode == 0 {
             throw NSError(domain: "API", code: -1, userInfo: [NSLocalizedDescriptionKey: "Update failed"])
         }
+
+        throw NSError(domain: "API", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Update failed with status \(statusCode)"])
     }
 
     // MARK: - Private Helpers

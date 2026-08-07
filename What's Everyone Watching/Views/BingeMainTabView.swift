@@ -33,32 +33,50 @@ struct BingeMainTabView: View {
 
 struct BingeFriendsTab: View {
     @Binding var tab: BingeTab
-    @State private var section = 0
+    @State private var showPeople = false
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .lastTextBaseline) {
-                Text("Friends").bingeDisplay(34)
-                Spacer()
+                Text("Friends").bingeDisplay(34).textCase(.uppercase)
+                Spacer(minLength: 12)
+                Button { showPeople = true } label: {
+                    Text("Invite").bingeLabel(11)
+                        .foregroundStyle(BingeTheme.accent)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
-            .padding(.horizontal, BingeTheme.gutter).padding(.top, 8).padding(.bottom, 14)
+            .padding(.horizontal, BingeTheme.gutter).padding(.top, 8).padding(.bottom, 12)
             BingeRule(strong: true)
 
-            BingeSegmented(options: ["Activity", "People"], selection: $section)
-                .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 12)
-            BingeRule(strong: true)
-
-            // Your existing views, restyled by the surrounding chrome.
-            // Their own NavigationStacks are suppressed by the toolbar hiding below.
-            Group {
-                if section == 0 { BingeFriendsFeed(tab: $tab) } else { BingePeopleTab() }
+            BingeFriendsFeed(tab: $tab, onFindPeople: { showPeople = true })
+        }
+        .sheet(isPresented: $showPeople) {
+            NavigationStack {
+                VStack(spacing: 0) {
+                    HStack(alignment: .lastTextBaseline) {
+                        Text("People").bingeDisplay(30).textCase(.uppercase)
+                        Spacer(minLength: 12)
+                        Button { showPeople = false } label: {
+                            Text("Done").bingeLabel(11).foregroundStyle(BingeTheme.accent)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, BingeTheme.gutter).padding(.top, 18).padding(.bottom, 12)
+                    BingeRule(strong: true)
+                    BingePeopleTab()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(BingeTheme.ground)
+                .foregroundStyle(BingeTheme.ink)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(BingeTheme.ground)
         .foregroundStyle(BingeTheme.ink)
-        .navigationBarHidden(true)
-        .padding(.top, 50)
+        .toolbar(.hidden, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .bottom, spacing: 0) { BingeTabBar(selection: $tab) }
     }
 }
@@ -93,7 +111,7 @@ struct BingeYouTab: View {
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, BingeTheme.gutter).padding(.top, 8).padding(.bottom, 16)
+            .padding(.horizontal, BingeTheme.gutter).padding(.top, 8).padding(.bottom, 14)
             BingeRule(strong: true)
 
             BingeSegmented(options: ["Library", "Watchlist"], selection: $section)
@@ -116,9 +134,10 @@ struct BingeYouTab: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(BingeTheme.ground)
         .foregroundStyle(BingeTheme.ink)
-        .navigationBarHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .bottom, spacing: 0) { BingeTabBar(selection: $tab) }
-        .sheet(isPresented: $showSettings) { SettingsView() }
+        .sheet(isPresented: $showSettings) { BingeSettingsView() }
         .sheet(isPresented: $showImport) { ImportManagementView() }
     }
 

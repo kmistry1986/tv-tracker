@@ -53,6 +53,9 @@ final class BingeFriendsEngine: ObservableObject {
     /// Shows two or more friends are on — the highlighted row in the design.
     @Published var sharedShow: (show: TVShow, who: [User])?
 
+    /// friend id → the title they most recently logged, for the people strip.
+    @Published var nowWatching: [String: String] = [:]
+
     func load() async {
         guard let userId = supabase.currentUser?.id else { return }
         isLoading = true
@@ -77,6 +80,12 @@ final class BingeFriendsEngine: ObservableObject {
         }
 
         entries = built.sorted { $0.watchedDate > $1.watchedDate }
+
+        var latest: [String: String] = [:]
+        for entry in entries where latest[entry.friend.id] == nil {
+            latest[entry.friend.id] = entry.show.title
+        }
+        nowWatching = latest
         sharedShow = byShow.values.first(where: { $0.1.count >= 2 }).map { ($0.0, $0.1) }
     }
 
@@ -97,6 +106,7 @@ final class BingeFriendsEngine: ObservableObject {
 struct BingeFriendsFeed: View {
     @StateObject private var engine = BingeFriendsEngine()
     @Binding var tab: BingeTab
+    var onFindPeople: () -> Void = {}
 
     var body: some View {
         Group {
@@ -126,10 +136,20 @@ struct BingeFriendsFeed: View {
                 kicker: "Nobody here yet",
                 headline: "BINGE IS EMPTY\nWITHOUT THEM.",
                 message: "Every recommendation comes from someone you know. Add three people and Tonight starts working.")
-            BingeRule(strong: true)
-            Spacer()
-            BingePrimaryButton(title: "Find people") { }
+            BingePrimaryButton(title: "Find people") { onFindPeople() }
                 .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 18)
+            BingeRule(strong: true)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("What lands here").bingeLabel(11).foregroundStyle(BingeTheme.inkMuted)
+                Text("Ratings, finished shows and the title two or more of your people are on — newest first.")
+                    .bingeBody(13).foregroundStyle(BingeTheme.ink.opacity(0.78))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 16)
+            BingeRule()
+            Spacer(minLength: 0)
         }
     }
 
@@ -138,7 +158,7 @@ struct BingeFriendsFeed: View {
             LazyVStack(spacing: 0) {
                 if !engine.friends.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Your people").bingeLabel(11).foregroundStyle(BingeTheme.inkMuted)
+                        Text("Watching right now").bingeLabel(11).foregroundStyle(BingeTheme.inkMuted)
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 10) {
                                 ForEach(engine.friends) { f in
@@ -148,7 +168,8 @@ struct BingeFriendsFeed: View {
                                             .frame(width: 50, height: 50)
                                             .background(BingeTheme.ink)
                                             .foregroundStyle(BingeTheme.ground)
-                                        Text(f.name.split(separator: " ").first.map(String.init) ?? f.name)
+                                        Text(engine.nowWatching[f.id]
+                                             ?? (f.name.split(separator: " ").first.map(String.init) ?? f.name))
                                             .bingeBody(10)
                                             .foregroundStyle(BingeTheme.inkMuted)
                                             .frame(width: 50, alignment: .leading)
@@ -167,7 +188,8 @@ struct BingeFriendsFeed: View {
                                  meta: "\(shared.who.count) friends · watching",
                                  headline: "Everyone's on \(shared.show.title)",
                                  quote: "Catch up and you're in the conversation.",
-                                 highlighted: true) {
+                                 highlighted: true,
+                                 metaAccent: true) {
                         BingeChip(title: "Join them", filled: true)
                     }
                     BingeRule()
@@ -175,7 +197,9 @@ struct BingeFriendsFeed: View {
 
                 ForEach(engine.entries) { entry in
                     NavigationLink {
-                        ShowDetailView(showId: entry.show.tmdbId, showTitle: entry.show.title)
+                        BingeShowDetailView(tmdbId: entry.show.tmdbId,
+                                            dbShowId: entry.show.id,
+                                            title: entry.show.title)
                     } label: {
                         BingeFeedRow(posterURL: entry.show.posterUrl,
                                      meta: entry.meta,

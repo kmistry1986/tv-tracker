@@ -257,7 +257,9 @@ struct BingeStatRow: View {
                         .foregroundStyle(onDark ? BingeTheme.onDarkMuted : BingeTheme.inkMuted)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 14)
+                .padding(.leading, i == 0 ? BingeTheme.gutter : 16)
+                .padding(.trailing, 10)
+                .padding(.vertical, 14)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(stats[i].spoken ?? stats[i].value) \(stats[i].label)")
                 if i < stats.count - 1 { BingeVRule(onDark: onDark) }
@@ -273,7 +275,8 @@ struct BingeStatRow: View {
 struct BingePoster: View {
     let urlString: String?
     var width: CGFloat? = 74
-    var height: CGFloat = 104
+    var height: CGFloat? = 104
+    var cropAnchor: Alignment = .center
     var accessibilityTitle: String? = nil
 
     private var url: URL? {
@@ -288,8 +291,10 @@ struct BingePoster: View {
             default: BingeTheme.inkFaint
             }
         }
-        .frame(width: width, height: height)
-        .frame(maxWidth: width == nil ? .infinity : nil)
+        .frame(width: width, height: height, alignment: cropAnchor)
+        .frame(maxWidth: width == nil ? .infinity : nil,
+               maxHeight: height == nil ? .infinity : nil,
+               alignment: cropAnchor)
         .clipped()
         .accessibilityHidden(accessibilityTitle == nil)
         .accessibilityLabel(accessibilityTitle ?? "")
@@ -322,13 +327,15 @@ struct BingeFeedRow<Actions: View>: View {
     let headline: String
     var quote: String? = nil
     var highlighted = false
+    var metaAccent = false
     @ViewBuilder var actions: () -> Actions
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             BingePoster(urlString: posterURL)
             VStack(alignment: .leading, spacing: 6) {
-                Text(meta).bingeLabel(11).foregroundStyle(BingeTheme.inkMuted)
+                Text(meta).bingeLabel(11)
+                    .foregroundStyle(metaAccent ? BingeTheme.accent : BingeTheme.inkMuted)
                 Text(headline).bingeHeadline(18).fixedSize(horizontal: false, vertical: true)
                 if let quote {
                     Text(quote).bingeBody(13).foregroundStyle(BingeTheme.ink.opacity(0.78))
@@ -372,12 +379,12 @@ struct BingeSourceBand: View {
     let kicker: String
     let statement: String
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(kicker).bingeLabel(11).foregroundStyle(.white.opacity(0.85))
-            Text(statement).bingeHeadline(22).fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 3) {
+            Text(kicker).bingeLabel(9).foregroundStyle(.white.opacity(0.85))
+            Text(statement).bingeHeadline(14).fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(BingeTheme.gutter)
+        .padding(10)
         .background(BingeTheme.accent)
         .foregroundStyle(.white)
         .accessibilityElement(children: .combine)
@@ -400,7 +407,7 @@ struct BingeSectionHeader: View {
                     .foregroundStyle(onDark ? BingeTheme.accentTint : BingeTheme.accent)
             }
         }
-        .padding(.horizontal, BingeTheme.gutter).padding(.top, 14).padding(.bottom, 8)
+        .padding(.horizontal, BingeTheme.gutter).padding(.top, 2).padding(.bottom, 8)
         .accessibilityAddTraits(.isHeader)
     }
 }
@@ -459,7 +466,7 @@ struct BingeTabBar: View {
                     .accessibilityAddTraits(selection == tab ? [.isButton, .isSelected] : .isButton)
                 }
             }
-            .padding(.horizontal, BingeTheme.gutter).padding(.top, 6).padding(.bottom, 14)
+            .padding(.leading, BingeTheme.gutter).padding(.top, 6)
         }
         .background((onDark ? BingeTheme.ink : BingeTheme.ground).ignoresSafeArea(edges: .bottom))
     }
