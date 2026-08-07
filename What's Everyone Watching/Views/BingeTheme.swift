@@ -379,12 +379,12 @@ struct BingeSourceBand: View {
     let kicker: String
     let statement: String
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(kicker).bingeLabel(9).foregroundStyle(.white.opacity(0.85))
-            Text(statement).bingeHeadline(14).fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(kicker).bingeLabel(10).foregroundStyle(.white.opacity(0.85))
+            Text(statement).bingeHeadline(17).fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
+        .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 14)
         .background(BingeTheme.accent)
         .foregroundStyle(.white)
         .accessibilityElement(children: .combine)
@@ -450,7 +450,7 @@ struct BingeTabBar: View {
         VStack(spacing: 0) {
             Rectangle()
                 .fill(onDark ? BingeTheme.onDarkRule : BingeTheme.ink)
-                .frame(height: onDark ? 1 : 2)
+                .frame(height: 2)
             HStack(spacing: 0) {
                 ForEach(BingeTab.allCases, id: \.self) { tab in
                     Button { selection = tab } label: {
@@ -467,6 +467,7 @@ struct BingeTabBar: View {
                 }
             }
             .padding(.leading, BingeTheme.gutter).padding(.top, 6)
+            .frame(height: BingeTheme.minTap + 6)
         }
         .background((onDark ? BingeTheme.ink : BingeTheme.ground).ignoresSafeArea(edges: .bottom))
     }

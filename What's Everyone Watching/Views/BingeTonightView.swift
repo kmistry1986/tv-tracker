@@ -59,12 +59,18 @@ final class TonightEngine: ObservableObject {
     @Published var friends: [User] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
+    @Published var watchlist: [Int] = []
     /// Shows already dismissed this session, so "Show me another" advances.
     private var skipped: Set<Int> = []
 
     private let supabase = SupabaseService.shared
 
     var stage: BingeGraphStage { .from(friendCount: friends.count) }
+
+    var isOnWatchlist: Bool {
+        guard let pick else { return false }
+        return watchlist.contains(pick.show.id)
+    }
 
     // The sentence in the red band. Upgrades as the graph grows.
     var sourceCopy: (kicker: String, statement: String) {
@@ -128,6 +134,10 @@ final class TonightEngine: ObservableObject {
 
         do {
             friends = try await supabase.fetchFriends(userId: userId)
+
+            // Load watchlist
+            let watchlistItems = try await supabase.fetchWatchlistShows(userId: userId)
+            watchlist = watchlistItems.map(\.showId)
 
             // What the user has already watched — never recommend these.
             let mine = try await supabase.fetchUserShows(userId: userId)
@@ -248,6 +258,7 @@ final class TonightEngine: ObservableObject {
 struct BingeTonightView: View {
     @StateObject private var engine = TonightEngine()
     @Binding var tab: BingeTab
+    @State private var middleHeight: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -264,8 +275,8 @@ struct BingeTonightView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(BingeTheme.ink.ignoresSafeArea())
         .foregroundStyle(BingeTheme.ground)
-        .navigationBarHidden(true)
-        .padding(.top, 50)
+        .toolbar(.hidden, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .bottom, spacing: 0) { BingeTabBar(selection: $tab, onDark: true) }
         .task { await engine.load() }
     }
@@ -277,7 +288,7 @@ struct BingeTonightView: View {
             Text(engine.friends.isEmpty ? "0 friends yet" : "\(engine.friends.count) friends")
                 .bingeLabel(11).foregroundStyle(BingeTheme.onDarkMuted)
         }
-        .padding(.horizontal, BingeTheme.gutter).padding(.top, 8).padding(.bottom, 12)
+        .padding(.horizontal, BingeTheme.gutter).padding(.top, 8).padding(.bottom, 10)
     }
 
     private var loading: some View {
@@ -311,56 +322,69 @@ struct BingeTonightView: View {
     private func content(_ pick: TonightPick) -> some View {
         VStack(spacing: 0) {
             ZStack(alignment: .bottomLeading) {
-                BingePoster(urlString: pick.show.posterUrl, width: nil, height: 288)
+                BingePoster(urlString: pick.show.posterUrl, width: nil, height: nil, cropAnchor: .top)
                 LinearGradient(colors: [BingeTheme.ink.opacity(0.94), BingeTheme.ink.opacity(0)],
                                startPoint: .bottom, endPoint: .top)
                 VStack(alignment: .leading, spacing: 8) {
                     Text(pick.show.title.uppercased())
                         .bingeDisplay(46)
                         .foregroundStyle(BingeTheme.ground)
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.55)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(metaLine(pick)).bingeLabel(12).foregroundStyle(BingeTheme.inkFaint)
                 }
                 .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 18)
             }
-            .frame(height: 288).clipped()
+            .frame(minHeight: 150, maxHeight: .infinity).clipped()
+            .layoutPriority(0)
 
-            BingeSourceBand(kicker: engine.sourceCopy.kicker,
-                            statement: engine.sourceCopy.statement)
+            ScrollView {
+                VStack(spacing: 0) {
+                    BingeSourceBand(kicker: engine.sourceCopy.kicker,
+                                    statement: engine.sourceCopy.statement)
 
-            BingeStatRow(stats: engine.stats, onDark: true)
-            BingeRule(onDark: true)
+                    BingeRule(onDark: true)
 
-            if engine.friends.count < 3 {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("This gets better fast").bingeLabel(11).foregroundStyle(BingeTheme.onDarkMuted)
-                    Text("Add three people you actually know and Tonight starts naming names.")
-                        .bingeBody(14).foregroundStyle(BingeTheme.inkFaint)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button { tab = .friends } label: {
-                        Text("Find your people →").bingeLabel(12)
-                            .foregroundStyle(BingeTheme.accentTint)
-                            .padding(.vertical, 6).contentShape(Rectangle())
+                    if engine.friends.count < 3 {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("This gets better fast").bingeLabel(11).foregroundStyle(BingeTheme.onDarkMuted)
+                            Text("Add three people you actually know and Tonight starts naming names.")
+                                .bingeBody(14).foregroundStyle(BingeTheme.inkFaint)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Button { tab = .friends } label: {
+                                Text("Find your people →").bingeLabel(12)
+                                    .foregroundStyle(BingeTheme.accentTint)
+                                    .padding(.vertical, 6).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 14)
+                        BingeRule(onDark: true)
                     }
-                    .buttonStyle(.plain)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 14)
-                BingeRule(onDark: true)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { middleHeight = $0 }
             }
-
-            Spacer(minLength: 0)
+            .frame(maxHeight: middleHeight == 0 ? nil : middleHeight)
+            .scrollBounceBehavior(.basedOnSize)
+            .layoutPriority(1)
 
             VStack(spacing: 10) {
                 NavigationLink {
-                    ShowDetailView(showId: pick.show.tmdbId, showTitle: pick.show.title)
+                    BingeShowDetailView(tmdbId: pick.show.tmdbId,
+                                        dbShowId: pick.show.id,
+                                        title: pick.show.title)
                 } label: {
                     HStack {
-                        Text("Open \(pick.show.title)").bingeHeadline(15).textCase(.uppercase)
+                        Text("Open \(pick.show.title)").bingeHeadline(13).textCase(.uppercase)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 12)
-                        Text("→").bingeHeadline(15)
+                        Text("→").bingeHeadline(13)
                     }
-                    .padding(.horizontal, 18).padding(.vertical, 17)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
                     .frame(maxWidth: .infinity, minHeight: BingeTheme.minTap)
                     .background(BingeTheme.ground)
                     .foregroundStyle(BingeTheme.ink)
@@ -371,12 +395,19 @@ struct BingeTonightView: View {
                     BingeOutlineButton(title: "Not tonight", onDark: true) {
                         Task { await engine.skipCurrent() }
                     }
-                    BingeOutlineButton(title: "Save it", onDark: true) {
-                        Task { await engine.saveCurrent() }
+                    if engine.isOnWatchlist {
+                        BingeOutlineButton(title: "On Watchlist", onDark: true) {}
+                    } else {
+                        BingeOutlineButton(title: "Save it", onDark: true) {
+                            Task { await engine.saveCurrent() }
+                        }
                     }
                 }
             }
-            .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 14)
+            .padding(.horizontal, BingeTheme.gutter)
+            .padding(.vertical, 14)
+            .fixedSize(horizontal: false, vertical: true)
+            .layoutPriority(1)
         }
     }
 
