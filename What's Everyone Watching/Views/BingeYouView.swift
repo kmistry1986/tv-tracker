@@ -97,14 +97,29 @@ final class BingeYouEngine: ObservableObject {
 
         let shows = (try? await supabase.fetchUserShows(userId: userId)) ?? []
         var built: [BingeLibraryItem] = []
+        var seenShowIds = Set<Int>()
+
         for row in shows {
             guard let show = try? await supabase.fetchShowById(id: row.showId) else { continue }
+            seenShowIds.insert(row.showId)
             built.append(BingeLibraryItem(id: row.id, show: show, rating: row.rating,
                                           watchedDate: row.watchedDate, isWatchlist: false,
                                           watchedEpisodes: counts[row.showId] ?? 0,
                                           lastSeason: latest[row.showId]?.0,
                                           lastEpisode: latest[row.showId]?.1))
         }
+
+        // Add shows with watched episodes that aren't in user_shows yet
+        for (showId, watchedCount) in counts {
+            guard !seenShowIds.contains(showId) else { continue }
+            guard let show = try? await supabase.fetchShowById(id: showId) else { continue }
+            built.append(BingeLibraryItem(id: showId, show: show, rating: nil,
+                                          watchedDate: nil, isWatchlist: false,
+                                          watchedEpisodes: watchedCount,
+                                          lastSeason: latest[showId]?.0,
+                                          lastEpisode: latest[showId]?.1))
+        }
+
         library = built.sorted { $0.progress > $1.progress }
 
         let list = (try? await supabase.fetchWatchlistShows(userId: userId)) ?? []

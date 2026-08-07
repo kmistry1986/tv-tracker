@@ -384,6 +384,11 @@ struct BingeSearchView: View {
             await engine.primeContext()
             fieldFocused = true
         }
+        .onChange(of: tab) { oldTab, newTab in
+            if newTab == .search {
+                Task { await engine.primeContext() }
+            }
+        }
         .sheet(item: $engine.ratingTarget) { result in
             BingeRatingSheet(title: result.title,
                            posterUrl: result.posterUrl,
