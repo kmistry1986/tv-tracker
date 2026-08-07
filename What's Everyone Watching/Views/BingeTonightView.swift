@@ -387,76 +387,104 @@ struct BingeTonightView: View {
                     LazyHStack(spacing: 0) {
                         ForEach(engine.picks.indices, id: \.self) { index in
                             GeometryReader { geo in
-                                Color.clear
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                    .background(
-                                        BingePoster(urlString: engine.picks[index].show.posterUrl, width: nil, height: nil, cropAnchor: .top)
-                                    )
-                                    .overlay(
-                                        LinearGradient(colors: [BingeTheme.ink.opacity(0.94), BingeTheme.ink.opacity(0)],
-                                                       startPoint: .bottom, endPoint: .top)
-                                    )
-                                    .overlay(alignment: .bottomLeading) {
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            Text(engine.picks[index].show.title.isEmpty ? "Untitled" : engine.picks[index].show.title.uppercased())
-                                                .bingeDisplay(39)
-                                                .foregroundStyle(BingeTheme.ground)
-                                                .lineLimit(3)
-                                                .minimumScaleFactor(0.55)
-                                                .fixedSize(horizontal: false, vertical: true)
-                                            Text(metaLine(engine.picks[index])).bingeLabel(10).foregroundStyle(BingeTheme.inkFaint)
-                                        }
-                                        .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 15)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                NavigationLink {
+                                    let pick = engine.picks[index]
+                                    if pick.isMovie {
+                                        BingeMovieDetailView(tmdbId: pick.show.tmdbId,
+                                                             dbMovieId: pick.show.id,
+                                                             title: pick.show.title)
+                                    } else {
+                                        BingeShowDetailView(tmdbId: pick.show.tmdbId,
+                                                            dbShowId: pick.show.id,
+                                                            title: pick.show.title)
                                     }
-                                    .clipped()
-                                    .onGeometryChange(for: Bool.self) { geometry in
-                                        let frame = geometry.frame(in: .global)
-                                        let isVisible = frame.minX >= 0 && frame.maxX <= UIScreen.main.bounds.width
-                                        return isVisible
-                                    } action: { isVisible in
-                                        if isVisible {
-                                            engine.visibleIndex = index
+                                } label: {
+                                    Color.clear
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                        .background(
+                                            BingePoster(urlString: engine.picks[index].show.posterUrl, width: nil, height: nil, cropAnchor: .top)
+                                        )
+                                        .overlay(
+                                            LinearGradient(colors: [BingeTheme.ink.opacity(0.94), BingeTheme.ink.opacity(0)],
+                                                           startPoint: .bottom, endPoint: .top)
+                                        )
+                                        .overlay(alignment: .bottomLeading) {
+                                            VStack(alignment: .leading, spacing: 8) {
+                                                Text(engine.picks[index].show.title.isEmpty ? "Untitled" : engine.picks[index].show.title.uppercased())
+                                                    .bingeDisplay(39)
+                                                    .foregroundStyle(BingeTheme.ground)
+                                                    .lineLimit(3)
+                                                    .minimumScaleFactor(0.55)
+                                                    .fixedSize(horizontal: false, vertical: true)
+                                                Text(metaLine(engine.picks[index])).bingeLabel(10).foregroundStyle(BingeTheme.inkFaint)
+                                            }
+                                            .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 15)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
                                         }
+                                        .clipped()
+                                }
+                                .buttonStyle(.plain)
+                                .onGeometryChange(for: Bool.self) { geometry in
+                                    let frame = geometry.frame(in: .global)
+                                    let isVisible = frame.minX >= 0 && frame.maxX <= UIScreen.main.bounds.width
+                                    return isVisible
+                                } action: { isVisible in
+                                    if isVisible {
+                                        engine.visibleIndex = index
                                     }
+                                }
                             }
                             .containerRelativeFrame(.horizontal)
                             .id(index)
                         }
                         if !engine.picks.isEmpty {
                             GeometryReader { geo in
-                                Color.clear
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                    .background(
-                                        BingePoster(urlString: engine.picks[0].show.posterUrl, width: nil, height: nil, cropAnchor: .top)
-                                    )
-                                    .overlay(
-                                        LinearGradient(colors: [BingeTheme.ink.opacity(0.94), BingeTheme.ink.opacity(0)],
-                                                       startPoint: .bottom, endPoint: .top)
-                                    )
-                                    .overlay(alignment: .bottomLeading) {
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            Text(engine.picks[0].show.title.isEmpty ? "Untitled" : engine.picks[0].show.title.uppercased())
-                                                .bingeDisplay(39)
-                                                .foregroundStyle(BingeTheme.ground)
-                                                .lineLimit(3)
-                                                .minimumScaleFactor(0.55)
-                                                .fixedSize(horizontal: false, vertical: true)
-                                            Text(metaLine(engine.picks[0])).bingeLabel(10).foregroundStyle(BingeTheme.inkFaint)
-                                        }
-                                        .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 15)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                NavigationLink {
+                                    let pick = engine.picks[0]
+                                    if pick.isMovie {
+                                        BingeMovieDetailView(tmdbId: pick.show.tmdbId,
+                                                             dbMovieId: pick.show.id,
+                                                             title: pick.show.title)
+                                    } else {
+                                        BingeShowDetailView(tmdbId: pick.show.tmdbId,
+                                                            dbShowId: pick.show.id,
+                                                            title: pick.show.title)
                                     }
-                                    .clipped()
-                                    .onGeometryChange(for: Bool.self) { geometry in
-                                        let frame = geometry.frame(in: .global)
-                                        let isVisible = frame.minX >= 0 && frame.maxX <= UIScreen.main.bounds.width
-                                        return isVisible
-                                    } action: { isVisible in
-                                        if isVisible {
-                                            engine.visibleIndex = 0
+                                } label: {
+                                    Color.clear
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                        .background(
+                                            BingePoster(urlString: engine.picks[0].show.posterUrl, width: nil, height: nil, cropAnchor: .top)
+                                        )
+                                        .overlay(
+                                            LinearGradient(colors: [BingeTheme.ink.opacity(0.94), BingeTheme.ink.opacity(0)],
+                                                           startPoint: .bottom, endPoint: .top)
+                                        )
+                                        .overlay(alignment: .bottomLeading) {
+                                            VStack(alignment: .leading, spacing: 8) {
+                                                Text(engine.picks[0].show.title.isEmpty ? "Untitled" : engine.picks[0].show.title.uppercased())
+                                                    .bingeDisplay(39)
+                                                    .foregroundStyle(BingeTheme.ground)
+                                                    .lineLimit(3)
+                                                    .minimumScaleFactor(0.55)
+                                                    .fixedSize(horizontal: false, vertical: true)
+                                                Text(metaLine(engine.picks[0])).bingeLabel(10).foregroundStyle(BingeTheme.inkFaint)
+                                            }
+                                            .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 15)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
                                         }
+                                }
+                                .buttonStyle(.plain)
+                                .clipped()
+                                .onGeometryChange(for: Bool.self) { geometry in
+                                    let frame = geometry.frame(in: .global)
+                                    let isVisible = frame.minX >= 0 && frame.maxX <= UIScreen.main.bounds.width
+                                    return isVisible
+                                } action: { isVisible in
+                                    if isVisible {
+                                        engine.visibleIndex = 0
                                     }
+                                }
                             }
                             .containerRelativeFrame(.horizontal)
                             .id(engine.picks.count)

@@ -44,6 +44,9 @@ final class BingeSettingsEngine: ObservableObject {
 
         // Clean up orphaned watchlist entries
         try? await supabase.cleanupOrphanedWatchlist()
+
+        // Remove shows from watchlist if they're also in library
+        try? await supabase.removeDuplicatesFromWatchlist()
     }
 
     func toggle(_ id: Int) {

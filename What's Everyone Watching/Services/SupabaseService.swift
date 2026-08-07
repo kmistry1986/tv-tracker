@@ -1197,6 +1197,23 @@ extension SupabaseService {
         }
     }
 
+    func removeDuplicatesFromWatchlist() async throws {
+        guard let userId = currentUser?.id else { return }
+
+        // Get shows in both watchlist and user_shows
+        let watchlistShows = (try? await fetchWatchlistShows(userId: userId)) ?? []
+        let userShows = (try? await fetchUserShows(userId: userId)) ?? []
+        let libraryShowIds = Set(userShows.map { $0.showId })
+
+        // Remove from watchlist if also in library
+        for show in watchlistShows {
+            if libraryShowIds.contains(show.showId) {
+                try? await removeShowFromWatchlist(userId: userId, showId: show.showId)
+                print("🧹 Removed duplicate show from watchlist: \(show.showId)")
+            }
+        }
+    }
+
     func mergeMaxIntoHBOMax() async throws {
         guard let userId = currentUser?.id else { return }
 
