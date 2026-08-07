@@ -1262,7 +1262,7 @@ extension SupabaseService {
         do {
             let watchlistShows = try await fetchWatchlistShows(userId: currentUser?.id ?? "")
             for watchlistShow in watchlistShows {
-                if let existing = try? await fetchShowById(id: watchlistShow.showId) {
+                if (try? await fetchShowById(id: watchlistShow.showId)) != nil {
                     print("Show \(watchlistShow.showId) already exists in tv_shows")
                     continue
                 }
@@ -1289,7 +1289,7 @@ extension SupabaseService {
         do {
             let watchlistMovies = try await fetchWatchlistMovies(userId: currentUser?.id ?? "")
             for watchlistMovie in watchlistMovies {
-                if let existing = try? await fetchMovieById(id: watchlistMovie.movieId) {
+                if (try? await fetchMovieById(id: watchlistMovie.movieId)) != nil {
                     print("Movie \(watchlistMovie.movieId) already exists in movies")
                     continue
                 }

@@ -28,7 +28,7 @@ struct BingeMainTabView: View {
             case .search:
                 NavigationStack { BingeSearchView(engine: searchEngine, tab: $tab) }
             case .you:
-                NavigationStack { BingeYouView(tab: $tab, engine: youEngine) }
+                NavigationStack { BingeYouView(engine: youEngine, tab: $tab) }
             }
         }
         .environmentObject(supabase)
