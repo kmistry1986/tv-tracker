@@ -293,7 +293,7 @@ struct BingeYouView: View {
                     ForEach(items) { item in
                         ZStack(alignment: .trailing) {
                             NavigationLink {
-                                BingeDetailView(tmdbId: item.show.tmdbId,
+                                BingeShowDetailView(tmdbId: item.show.tmdbId,
                                                     dbShowId: item.show.id,
                                                     title: item.show.title)
                             } label: {

@@ -197,7 +197,7 @@ struct BingeFriendsFeed: View {
 
                 ForEach(engine.entries) { entry in
                     NavigationLink {
-                        BingeDetailView(tmdbId: entry.show.tmdbId,
+                        BingeShowDetailView(tmdbId: entry.show.tmdbId,
                                             dbShowId: entry.show.id,
                                             title: entry.show.title)
                     } label: {

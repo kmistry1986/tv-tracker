@@ -430,7 +430,7 @@ struct BingeSearchView: View {
                                          dbMovieId: result.tmdbId,
                                          title: result.title)
                 } else {
-                    BingeDetailView(tmdbId: result.tmdbId,
+                    BingeShowDetailView(tmdbId: result.tmdbId,
                                     dbShowId: result.tmdbId,
                                     title: result.title)
                 }
