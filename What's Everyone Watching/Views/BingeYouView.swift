@@ -169,9 +169,6 @@ struct BingeYouView: View {
                 }
             }
             .task { await engine.load() }
-            .onChange(of: tab) { oldTab, newTab in
-                if newTab == .you { Task { await engine.load() } }
-            }
 
             if let message = notificationManager.message {
                 VStack {

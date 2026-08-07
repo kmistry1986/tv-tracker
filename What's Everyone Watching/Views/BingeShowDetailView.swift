@@ -35,6 +35,7 @@ struct BingeShowDetailView: View {
     @State private var showRatingSheet = false
     @State private var confirmFinishShow = false
     @EnvironmentObject private var notificationManager: NotificationManager
+    @EnvironmentObject private var youEngine: BingeYouEngine
 
     @Environment(\.dismiss) private var dismiss
 
@@ -375,12 +376,14 @@ struct BingeShowDetailView: View {
 
             _ = try await (episodeOp, stateOp)
 
-            // Update isInLibrary based on final watched state
+            // Update isInLibrary based on final watched state and update engine
             if turningOn && wasEmpty {
                 notificationManager.show("Moved to Started")
+                youEngine.library.removeAll { $0.show.id == (dbShowId ?? tmdbId) }
             } else if !turningOn && watched.isEmpty {
                 isInLibrary = false
                 notificationManager.show("Moved to Saved")
+                youEngine.library.removeAll { $0.show.id == (dbShowId ?? tmdbId) }
             }
         } catch {
             if turningOn { watched.remove(ep.id) } else { watched.insert(ep.id) }

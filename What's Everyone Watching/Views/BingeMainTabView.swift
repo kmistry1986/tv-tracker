@@ -34,6 +34,7 @@ struct BingeMainTabView: View {
         }
         .environmentObject(supabase)
         .environmentObject(notificationManager)
+        .environmentObject(youEngine)
         .tint(BingeTheme.accent)
         .sheet(item: $ratingPrompt) { payload in
             DailyRatingPrompt(items: payload.items) {
