@@ -354,9 +354,26 @@ struct BingeShowDetailView: View {
 
     private func toggle(_ ep: EpisodeDetail) async {
         let turningOn = !watched.contains(ep.id)
+        let wasEmpty = watched.isEmpty
+        let wasComplete = fraction == 1.0
+
         if turningOn { watched.insert(ep.id) } else { watched.remove(ep.id) }
+        let isNowComplete = watchedCount == totalCount && totalCount > 0
+
         do {
             try await supabase.updateEpisodeWatched(episodeId: ep.id, watched: turningOn)
+
+            guard let userId = supabase.currentUser?.id else { return }
+
+            if turningOn && wasEmpty {
+                try await supabase.moveWatchlistToLibrary(userId: userId, showId: dbShowId ?? tmdbId)
+            } else if !turningOn && watched.isEmpty {
+                try await supabase.removeFromLibraryIfNoWatchedEpisodes(userId: userId, showId: dbShowId ?? tmdbId)
+            }
+
+            if isNowComplete && !wasComplete {
+                showRatingSheet = true
+            }
         } catch {
             if turningOn { watched.remove(ep.id) } else { watched.insert(ep.id) }
         }
@@ -372,8 +389,16 @@ struct BingeShowDetailView: View {
     }
 
     private func finishShow(thenRate: Bool) async {
+        guard let userId = supabase.currentUser?.id else { return }
         isWorking = true
+
+        let wasEmpty = watched.isEmpty
         for s in seasons { await setSeason(s, watched: true) }
+
+        if wasEmpty {
+            try? await supabase.moveWatchlistToLibrary(userId: userId, showId: dbShowId ?? tmdbId)
+        }
+
         isWorking = false
         if thenRate || rating == nil { showRatingSheet = true }
     }

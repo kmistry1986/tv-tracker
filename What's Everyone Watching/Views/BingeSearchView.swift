@@ -227,6 +227,17 @@ final class BingeSearchEngine: ObservableObject {
                     try await supabase.insertUserShow(userId: userId, showId: result.tmdbId, watchedDate: today, rating: 5)
                     libraryShows.insert(result.tmdbId)
                     finishedShows.insert(result.tmdbId)
+
+                    // Mark all episodes as watched
+                    if let tmdbShow = try? await TMDBService.shared.getTVShow(id: result.tmdbId) {
+                        for season in 1...tmdbShow.numberOfSeasons {
+                            if let tmdbSeason = try? await TMDBService.shared.getTVSeason(showId: result.tmdbId, seasonNumber: season) {
+                                for episode in tmdbSeason.episodes {
+                                    try? await supabase.updateEpisodeWatched(episodeId: episode.id, watched: true)
+                                }
+                            }
+                        }
+                    }
                 }
             }
             objectWillChange.send()

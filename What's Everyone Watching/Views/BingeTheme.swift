@@ -441,7 +441,7 @@ struct BingeArgumentBlock: View {
 // Named BingeTab, not Tab — SwiftUI added its own `Tab` type in iOS 18.
 
 enum BingeTab: String, CaseIterable {
-    case tonight = "Tonight", friends = "Friends", you = "You"
+    case tonight = "Tonight", friends = "Friends", search = "Search", you = "You"
 }
 
 struct BingeTabBar: View {
@@ -456,7 +456,7 @@ struct BingeTabBar: View {
                 ForEach(BingeTab.allCases, id: \.self) { tab in
                     Button { selection = tab } label: {
                         Text(tab.rawValue)
-                            .bingeLabel(10)
+                            .bingeLabel(15)
                             .frame(maxWidth: .infinity, minHeight: BingeTheme.minTap, alignment: .leading)
                             .foregroundStyle(selection == tab
                                              ? (onDark ? BingeTheme.accentTint : BingeTheme.accent)

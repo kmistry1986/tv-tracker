@@ -12,8 +12,10 @@ struct BingeMainTabView: View {
     @StateObject private var supabase = SupabaseService.shared
     @StateObject private var searchEngine = BingeSearchEngine()
     @State private var tab: BingeTab = .tonight
-    @State private var showRatingPrompt = false
-    @State private var unratedWatching: [BingeLibraryItem] = []
+    /// Carried WITH the presentation. A plain @State array read by a
+    /// .sheet(isPresented:) closure can be captured while it's still empty,
+    /// which is what rendered "Rate these" over nothing.
+    @State private var ratingPrompt: RatingPromptPayload?
 
     var body: some View {
         Group {
@@ -30,10 +32,12 @@ struct BingeMainTabView: View {
         }
         .environmentObject(supabase)
         .tint(BingeTheme.accent)
-        .sheet(isPresented: $showRatingPrompt) {
-            DailyRatingPrompt(items: unratedWatching, isPresented: $showRatingPrompt) {
+        .sheet(item: $ratingPrompt) { payload in
+            DailyRatingPrompt(items: payload.items) {
+                ratingPrompt = nil
                 UserDefaults.standard.set(Date(), forKey: "lastRatingPromptDate")
             }
+            .environmentObject(supabase)
         }
         .task {
             await checkAndShowRatingPrompt()
@@ -44,15 +48,14 @@ struct BingeMainTabView: View {
         let lastPromptDate = UserDefaults.standard.object(forKey: "lastRatingPromptDate") as? Date ?? Date(timeIntervalSince1970: 0)
         let hoursSinceLastPrompt = Date().timeIntervalSince(lastPromptDate) / 3600
 
-        if hoursSinceLastPrompt >= 24, let userId = supabase.currentUser?.id {
-            if let items = try? await loadWatchingItems(userId: userId) {
-                let unrated = items.filter { $0.rating == nil && $0.isWatching }
-                if !unrated.isEmpty {
-                    unratedWatching = Array(unrated.prefix(3))
-                    showRatingPrompt = true
-                }
-            }
-        }
+        guard hoursSinceLastPrompt >= 24, let userId = supabase.currentUser?.id else { return }
+        guard let items = try? await loadWatchingItems(userId: userId) else { return }
+
+        let unrated = items.filter { $0.rating == nil && $0.isWatching }
+        guard !unrated.isEmpty else { return }
+
+        // Building the payload IS the trigger, so the sheet can never open empty.
+        ratingPrompt = RatingPromptPayload(items: Array(unrated.prefix(3)))
     }
 
     private func loadWatchingItems(userId: String) async throws -> [BingeLibraryItem] {
@@ -197,10 +200,14 @@ struct BingeYouTab: View {
 
 // MARK: - Daily Rating Prompt
 
+struct RatingPromptPayload: Identifiable {
+    let id = UUID()
+    let items: [BingeLibraryItem]
+}
+
 struct DailyRatingPrompt: View {
     @EnvironmentObject private var supabase: SupabaseService
     let items: [BingeLibraryItem]
-    @Binding var isPresented: Bool
     let onDismiss: () -> Void
     @State private var ratingTarget: BingeLibraryItem?
 
@@ -210,7 +217,7 @@ struct DailyRatingPrompt: View {
                 HStack {
                     Text("Rate these").bingeDisplay(28)
                     Spacer()
-                    Button { isPresented = false; onDismiss() } label: {
+                    Button { onDismiss() } label: {
                         Text("Skip").bingeLabel(11).foregroundStyle(BingeTheme.accent)
                             .padding(.vertical, 8).contentShape(Rectangle())
                     }
@@ -218,6 +225,16 @@ struct DailyRatingPrompt: View {
                 }
                 .padding(.horizontal, BingeTheme.gutter).padding(.top, 12).padding(.bottom, 10)
                 BingeRule(strong: true)
+
+                if items.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Nothing to rate").bingeLabel(11).foregroundStyle(BingeTheme.inkMuted)
+                        Text("You're caught up on everything you're watching.")
+                            .bingeBody(14).foregroundStyle(BingeTheme.inkMuted)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 18)
+                }
 
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -244,10 +261,7 @@ struct DailyRatingPrompt: View {
                 }
 
                 VStack(spacing: 9) {
-                    BingePrimaryButton(title: "Later") {
-                        isPresented = false
-                        onDismiss()
-                    }
+                    BingePrimaryButton(title: "Later") { onDismiss() }
                 }
                 .padding(.horizontal, BingeTheme.gutter).padding(.top, 12).padding(.bottom, 20)
             }

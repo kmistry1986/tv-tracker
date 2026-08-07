@@ -387,6 +387,23 @@ class SupabaseService: NSObject, ObservableObject {
         }
     }
 
+    func moveWatchlistToLibrary(userId: String, showId: Int) async throws {
+        let today = ISO8601DateFormatter().string(from: Date())
+        try await insertUserShow(userId: userId, showId: showId, watchedDate: today)
+    }
+
+    func removeFromLibraryIfNoWatchedEpisodes(userId: String, showId: Int) async throws {
+        let watchedEpisodes = (try? await fetchUserEpisodes(userId: userId)) ?? []
+        let episodesForShow = watchedEpisodes.filter { $0.showId == showId }
+
+        if episodesForShow.isEmpty {
+            if let userShow = try? await fetchUserShows(userId: userId),
+               let item = userShow.first(where: { $0.showId == showId }) {
+                try await removeUserShow(id: item.id)
+            }
+        }
+    }
+
     func fetchUserEpisodes(userId: String) async throws -> [Episode] {
         let endpoint = "\(supabaseURL)/rest/v1/episodes?user_id=eq.\(userId)&watched=eq.true&order=watched_at.desc"
         return try await fetch(endpoint: endpoint)

@@ -327,10 +327,10 @@ struct BingeTonightView: View {
 
     private var header: some View {
         HStack {
-            Text(weekday).bingeLabel(9).foregroundStyle(BingeTheme.accentTint)
+            Text(weekday).bingeLabel(13).foregroundStyle(BingeTheme.accentTint)
             Spacer()
             Text(engine.friends.isEmpty ? "0 friends yet" : "\(engine.friends.count) friends")
-                .bingeLabel(9).foregroundStyle(BingeTheme.onDarkMuted)
+                .bingeLabel(13).foregroundStyle(BingeTheme.onDarkMuted)
         }
         .padding(.horizontal, BingeTheme.gutter).padding(.top, 7).padding(.bottom, 9)
     }
