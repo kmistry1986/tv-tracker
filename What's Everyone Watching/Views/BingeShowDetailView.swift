@@ -34,6 +34,8 @@ struct BingeShowDetailView: View {
     @State private var showSeasonSheet = false
     @State private var showRatingSheet = false
     @State private var confirmFinishShow = false
+    @State private var toastMessage: String?
+    @State private var toastTask: Task<Void, Never>?
 
     @Environment(\.dismiss) private var dismiss
 
@@ -122,6 +124,36 @@ struct BingeShowDetailView: View {
                              existingReview: review) { newRating, newReview in
                 rating = newRating
                 review = newReview
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let message = toastMessage {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Text(message).bingeHeadline(14)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                    .padding(.vertical, 12).padding(.horizontal, BingeTheme.gutter)
+                    .background(BingeTheme.ink)
+                    .foregroundStyle(BingeTheme.ground)
+                    .cornerRadius(8)
+                    .padding(BingeTheme.gutter)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .ignoresSafeArea(edges: .bottom)
+            }
+        }
+    }
+
+    private func showToast(_ message: String) {
+        toastTask?.cancel()
+        toastMessage = message
+        toastTask = Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            withAnimation {
+                toastMessage = nil
             }
         }
     }
@@ -374,9 +406,12 @@ struct BingeShowDetailView: View {
 
             _ = try await (episodeOp, stateOp)
 
-            // Update isInLibrary based on final watched state
-            if !turningOn && watched.isEmpty {
+            // Update isInLibrary based on final watched state and show toast
+            if turningOn && wasEmpty {
+                showToast("Moved to Started")
+            } else if !turningOn && watched.isEmpty {
                 isInLibrary = false
+                showToast("Moved to Saved")
             }
         } catch {
             if turningOn { watched.remove(ep.id) } else { watched.insert(ep.id) }
