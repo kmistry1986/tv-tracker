@@ -317,10 +317,10 @@ class SupabaseService: NSObject, ObservableObject {
         if statusCode == 201 {
             return
         } else if statusCode == 409 {
-            // Episode already exists - update it if marked as watched
+            // Episode already exists - update it to mark as watched
             if episode.watched {
                 print("⚠️ Duplicate episode - updating watched status")
-                try await updateEpisodeWatched(episodeId: episode.id, watched: true, watchedAt: episode.watchedAt, userId: episode.userId)
+                try await updateEpisodeWatchedById(episodeId: episode.id, watched: true, watchedAt: episode.watchedAt)
             } else {
                 print("⚠️ Duplicate episode - skipping")
             }
@@ -331,6 +331,35 @@ class SupabaseService: NSObject, ObservableObject {
         } else {
             throw NSError(domain: "API", code: -1, userInfo: [NSLocalizedDescriptionKey: "Episode insert failed with status \(statusCode): \(responseBody)"])
         }
+    }
+
+    private func updateEpisodeWatchedById(episodeId: Int, watched: Bool, watchedAt: String?) async throws {
+        let endpoint = "\(supabaseURL)/rest/v1/episodes?id=eq.\(episodeId)"
+        var request = URLRequest(url: URL(string: endpoint)!)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        if !authToken.isEmpty {
+            request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
+
+        struct UpdateBody: Encodable {
+            let watched: Bool
+            let watched_at: String?
+        }
+
+        let body = UpdateBody(watched: watched, watched_at: watchedAt)
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+
+        if statusCode == 204 || statusCode == 200 {
+            return
+        }
+
+        let responseStr = String(data: data, encoding: .utf8) ?? ""
+        print("⚠️ updateEpisodeWatchedById failed: status=\(statusCode), response=\(responseStr)")
     }
 
     private func updateEpisodeWatched(episodeId: Int, watched: Bool, watchedAt: String?, userId: String?) async throws {
