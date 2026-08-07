@@ -152,7 +152,13 @@ final class BingeSearchEngine: ObservableObject {
         } else {
             provider = try? await TMDBService.shared.getTVWatchProviders(tvId: result.tmdbId)
         }
-        if let name = provider?.streamingProviders.first?.providerName {
+
+        // Find first provider that isn't an Amazon Channel variant
+        let filtered = provider?.streamingProviders.first { p in
+            !p.providerName.lowercased().contains("amazon channel")
+        }
+
+        if let name = filtered?.providerName {
             platforms[result.id] = name
         } else {
             platforms[result.id] = ""
