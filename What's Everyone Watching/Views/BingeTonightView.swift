@@ -38,6 +38,7 @@ struct TonightPick {
     let averageFriendRating: Double?
     let service: String?
     let isFallback: Bool        // true = no social signal
+    var isMovie: Bool = false   // true for movies, false for shows
     /// The user's own show this was derived from, when there's no social signal.
     var seedTitle: String? = nil
 }
@@ -290,10 +291,12 @@ final class TonightEngine: ObservableObject {
                 guard !skipMovie else { continue }
 
                 let show = makeShow(from: result)
-                picks.append(TonightPick(show: show, friendsFinished: [],
-                                         averageFriendRating: nil,
-                                         service: try? await service(for: show),
-                                         isFallback: true))
+                var pick = TonightPick(show: show, friendsFinished: [],
+                                       averageFriendRating: nil,
+                                       service: try? await service(for: show),
+                                       isFallback: true)
+                pick.isMovie = true
+                picks.append(pick)
             }
         }
     }
@@ -547,7 +550,7 @@ struct BingeTonightView: View {
     }
 
     private func metaLine(_ pick: TonightPick) -> String {
-        var parts: [String] = ["Series"]
+        var parts: [String] = [pick.isMovie ? "Movie" : "Series"]
         if let s = pick.service, !s.isEmpty { parts.append(s) }
         return parts.joined(separator: " | ")
     }
