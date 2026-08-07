@@ -221,10 +221,10 @@ final class BingeSearchEngine: ObservableObject {
 
                 let today = ISO8601DateFormatter().string(from: Date())
                 if result.isMovie {
-                    try await supabase.insertUserMovie(userId: userId, movieId: result.tmdbId, watchedDate: today, rating: 5)
+                    try await supabase.insertUserMovie(userId: userId, movieId: result.tmdbId, watchedDate: today)
                     libraryMovies.insert(result.tmdbId)
                 } else {
-                    try await supabase.insertUserShow(userId: userId, showId: result.tmdbId, watchedDate: today, rating: 5)
+                    try await supabase.insertUserShow(userId: userId, showId: result.tmdbId, watchedDate: today)
                     libraryShows.insert(result.tmdbId)
                     finishedShows.insert(result.tmdbId)
 
