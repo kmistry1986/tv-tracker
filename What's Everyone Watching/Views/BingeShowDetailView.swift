@@ -378,6 +378,8 @@ struct BingeShowDetailView: View {
 
             if turningOn && wasEmpty {
                 try await supabase.moveWatchlistToLibrary(userId: userId, showId: dbShowId ?? tmdbId)
+                // Also remove from watchlist if it was there
+                try? await supabase.removeShowFromWatchlist(userId: userId, showId: dbShowId ?? tmdbId)
             } else if !turningOn && watched.isEmpty {
                 try await supabase.removeFromLibraryIfNoWatchedEpisodes(userId: userId, showId: dbShowId ?? tmdbId)
             }
