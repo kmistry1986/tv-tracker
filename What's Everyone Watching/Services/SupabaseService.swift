@@ -1141,6 +1141,30 @@ extension SupabaseService {
         return results
     }
 
+    func cleanupOrphanedWatchlist() async throws {
+        guard let userId = currentUser?.id else { return }
+
+        // Get all watchlist shows
+        let watchlistShows = (try? await fetchWatchlistShows(userId: userId)) ?? []
+        let watchlistMovies = (try? await fetchWatchlistMovies(userId: userId)) ?? []
+
+        // Remove shows that don't exist in tv_shows table
+        for show in watchlistShows {
+            if (try? await fetchShowById(id: show.showId)) == nil {
+                try? await removeShowFromWatchlist(userId: userId, showId: show.showId)
+                print("🧹 Removed orphaned watchlist show: \(show.showId)")
+            }
+        }
+
+        // Remove movies that don't exist in movies table
+        for movie in watchlistMovies {
+            if (try? await fetchMovieById(id: movie.movieId)) == nil {
+                try? await removeFromWatchlistMovie(id: movie.id)
+                print("🧹 Removed orphaned watchlist movie: \(movie.movieId)")
+            }
+        }
+    }
+
     func mergeMaxIntoHBOMax() async throws {
         guard let userId = currentUser?.id else { return }
 

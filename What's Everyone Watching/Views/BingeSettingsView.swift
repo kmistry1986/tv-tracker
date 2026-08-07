@@ -41,6 +41,9 @@ final class BingeSettingsEngine: ObservableObject {
 
         // Merge Max into HBO Max if both exist
         try? await supabase.mergeMaxIntoHBOMax()
+
+        // Clean up orphaned watchlist entries
+        try? await supabase.cleanupOrphanedWatchlist()
     }
 
     func toggle(_ id: Int) {
