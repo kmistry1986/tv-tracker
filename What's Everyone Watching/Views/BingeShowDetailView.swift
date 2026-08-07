@@ -361,9 +361,20 @@ struct BingeShowDetailView: View {
         let isNowComplete = watchedCount == totalCount && totalCount > 0
 
         do {
-            try await supabase.updateEpisodeWatched(episodeId: ep.id, watched: turningOn)
-
             guard let userId = supabase.currentUser?.id else { return }
+
+            // Insert episode record if marking as watched
+            if turningOn {
+                let episode = Episode(id: ep.id, showId: tmdbId, tmdbId: ep.id,
+                                    seasonNumber: ep.seasonNumber, episodeNumber: ep.episodeNumber,
+                                    name: ep.name, overview: ep.overview ?? "",
+                                    airDate: ep.airDate, userId: userId,
+                                    watched: true, watchedAt: ISO8601DateFormatter().string(from: Date()),
+                                    showTitle: details?.name)
+                try? await supabase.insertEpisode(episode: episode)
+            } else {
+                try await supabase.updateEpisodeWatched(episodeId: ep.id, watched: false)
+            }
 
             if turningOn && wasEmpty {
                 try await supabase.moveWatchlistToLibrary(userId: userId, showId: dbShowId ?? tmdbId)
