@@ -725,6 +725,38 @@ class SupabaseService: NSObject, ObservableObject {
         try await delete(endpoint: endpoint)
     }
 
+    func restoreToWatchlist(userId: String, showId: Int) async throws {
+        // Fetch show from TMDB and ensure it's in tv_shows table
+        if let tmdbShow = try? await TMDBService.shared.getTVShow(id: showId) {
+            let show = TVShow(id: showId, tmdbId: showId, title: tmdbShow.name,
+                            overview: tmdbShow.overview, posterUrl: tmdbShow.imageUrl,
+                            firstAirDate: tmdbShow.firstAirDate, numberOfSeasons: tmdbShow.numberOfSeasons,
+                            numberOfEpisodes: tmdbShow.numberOfEpisodes)
+            try? await insertShow(show: show)
+        }
+
+        // Delete any existing entry, then insert fresh one to ensure it's in watchlist
+        try? await removeShowFromWatchlist(userId: userId, showId: showId)
+
+        let endpoint = "\(supabaseURL)/rest/v1/watchlist_shows"
+        struct WatchlistShowInsert: Encodable {
+            let user_id: String
+            let show_id: Int
+            let priority: String
+            let notes: String?
+            let added_at: String
+        }
+
+        let body = WatchlistShowInsert(
+            user_id: userId,
+            show_id: showId,
+            priority: "medium",
+            notes: nil,
+            added_at: ISO8601DateFormatter().string(from: Date())
+        )
+        try await insert(endpoint: endpoint, body: body)
+    }
+
     func removeFromWatchlistMovie(id: Int) async throws {
         let endpoint = "\(supabaseURL)/rest/v1/watchlist_movies?id=eq.\(id)"
         try await delete(endpoint: endpoint)

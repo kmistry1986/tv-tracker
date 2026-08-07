@@ -373,6 +373,11 @@ struct BingeShowDetailView: View {
             async let stateOp = updateLibraryState(turningOn: turningOn, wasEmpty: wasEmpty, userId: userId)
 
             _ = try await (episodeOp, stateOp)
+
+            // Update isInLibrary based on final watched state
+            if !turningOn && watched.isEmpty {
+                isInLibrary = false
+            }
         } catch {
             if turningOn { watched.remove(ep.id) } else { watched.insert(ep.id) }
         }
@@ -399,8 +404,12 @@ struct BingeShowDetailView: View {
             _ = try await (move, remove)
         } else if !turningOn && watched.isEmpty {
             try await supabase.removeFromLibraryIfNoWatchedEpisodes(userId: userId, showId: dbShowId ?? tmdbId)
-            // Add back to watchlist when removing all episodes
-            try? await supabase.addToWatchlistShow(userId: userId, showId: dbShowId ?? tmdbId)
+            // Add back to watchlist — force insert regardless of current state
+            do {
+                try await supabase.restoreToWatchlist(userId: userId, showId: dbShowId ?? tmdbId)
+            } catch {
+                print("Failed to restore show to watchlist: \(error)")
+            }
         }
     }
 
