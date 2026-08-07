@@ -421,13 +421,14 @@ class SupabaseService: NSObject, ObservableObject {
         }
     }
     
-    func insertUserShow(userId: String, showId: Int, watchedDate: String) async throws {
+    func insertUserShow(userId: String, showId: Int, watchedDate: String, rating: Int? = nil) async throws {
         let endpoint = "\(supabaseURL)/rest/v1/user_shows"
 
         struct UserShowInsert: Encodable {
             let user_id: String
             let show_id: Int
             let watched_date: String
+            let rating: Int?
             let created_at: String
         }
 
@@ -435,6 +436,7 @@ class SupabaseService: NSObject, ObservableObject {
             user_id: userId,
             show_id: showId,
             watched_date: watchedDate,
+            rating: rating,
             created_at: ISO8601DateFormatter().string(from: Date())
         )
         try await insert(endpoint: endpoint, body: body)
@@ -477,13 +479,14 @@ class SupabaseService: NSObject, ObservableObject {
         }
     }
 
-    func insertUserMovie(userId: String, movieId: Int, watchedDate: String) async throws {
+    func insertUserMovie(userId: String, movieId: Int, watchedDate: String, rating: Int? = nil) async throws {
         let endpoint = "\(supabaseURL)/rest/v1/user_movies"
 
         struct UserMovieInsert: Encodable {
             let user_id: String
             let movie_id: Int
             let watched_date: String
+            let rating: Int?
             let created_at: String
         }
 
@@ -491,6 +494,7 @@ class SupabaseService: NSObject, ObservableObject {
             user_id: userId,
             movie_id: movieId,
             watched_date: watchedDate,
+            rating: rating,
             created_at: ISO8601DateFormatter().string(from: Date())
         )
         try await insert(endpoint: endpoint, body: body)
@@ -670,6 +674,11 @@ class SupabaseService: NSObject, ObservableObject {
 
     func removeFromWatchlistMovie(id: Int) async throws {
         let endpoint = "\(supabaseURL)/rest/v1/watchlist_movies?id=eq.\(id)"
+        try await delete(endpoint: endpoint)
+    }
+
+    func removeMovieFromWatchlist(userId: String, movieId: Int) async throws {
+        let endpoint = "\(supabaseURL)/rest/v1/watchlist_movies?user_id=eq.\(userId)&movie_id=eq.\(movieId)"
         try await delete(endpoint: endpoint)
     }
 

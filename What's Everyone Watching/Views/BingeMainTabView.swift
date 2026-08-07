@@ -10,7 +10,10 @@ import SwiftUI
 
 struct BingeMainTabView: View {
     @StateObject private var supabase = SupabaseService.shared
+    @StateObject private var searchEngine = BingeSearchEngine()
     @State private var tab: BingeTab = .tonight
+    @State private var showRatingPrompt = false
+    @State private var unratedWatching: [BingeLibraryItem] = []
 
     var body: some View {
         Group {
@@ -19,12 +22,56 @@ struct BingeMainTabView: View {
                 NavigationStack { BingeTonightView(tab: $tab) }
             case .friends:
                 NavigationStack { BingeFriendsTab(tab: $tab) }
+            case .search:
+                NavigationStack { BingeSearchView(engine: searchEngine, tab: $tab) }
             case .you:
                 NavigationStack { BingeYouView(tab: $tab) }
             }
         }
         .environmentObject(supabase)
         .tint(BingeTheme.accent)
+        .sheet(isPresented: $showRatingPrompt) {
+            DailyRatingPrompt(items: unratedWatching, isPresented: $showRatingPrompt) {
+                UserDefaults.standard.set(Date(), forKey: "lastRatingPromptDate")
+            }
+        }
+        .task {
+            await checkAndShowRatingPrompt()
+        }
+    }
+
+    private func checkAndShowRatingPrompt() async {
+        let lastPromptDate = UserDefaults.standard.object(forKey: "lastRatingPromptDate") as? Date ?? Date(timeIntervalSince1970: 0)
+        let hoursSinceLastPrompt = Date().timeIntervalSince(lastPromptDate) / 3600
+
+        if hoursSinceLastPrompt >= 24, let userId = supabase.currentUser?.id {
+            if let items = try? await loadWatchingItems(userId: userId) {
+                let unrated = items.filter { $0.rating == nil && $0.isWatching }
+                if !unrated.isEmpty {
+                    unratedWatching = Array(unrated.prefix(3))
+                    showRatingPrompt = true
+                }
+            }
+        }
+    }
+
+    private func loadWatchingItems(userId: String) async throws -> [BingeLibraryItem] {
+        let episodes = (try? await supabase.fetchUserEpisodes(userId: userId)) ?? []
+        var counts: [Int: Int] = [:]
+        for ep in episodes where ep.watched {
+            counts[ep.showId, default: 0] += 1
+        }
+
+        let shows = (try? await supabase.fetchUserShows(userId: userId)) ?? []
+        var built: [BingeLibraryItem] = []
+        for row in shows {
+            guard let show = try? await supabase.fetchShowById(id: row.showId) else { continue }
+            built.append(BingeLibraryItem(id: row.id, show: show, rating: row.rating,
+                                          watchedDate: row.watchedDate, isWatchlist: false,
+                                          watchedEpisodes: counts[row.showId] ?? 0))
+        }
+
+        return built.sorted { $0.progress > $1.progress }
     }
 }
 
@@ -145,5 +192,78 @@ struct BingeYouTab: View {
         let name = supabase.currentUser?.name ?? "You"
         let parts = name.split(separator: " ").prefix(2)
         return parts.map { String($0.prefix(1)).uppercased() }.joined()
+    }
+}
+
+// MARK: - Daily Rating Prompt
+
+struct DailyRatingPrompt: View {
+    @EnvironmentObject private var supabase: SupabaseService
+    let items: [BingeLibraryItem]
+    @Binding var isPresented: Bool
+    let onDismiss: () -> Void
+    @State private var ratingTarget: BingeLibraryItem?
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Rate these").bingeDisplay(28)
+                    Spacer()
+                    Button { isPresented = false; onDismiss() } label: {
+                        Text("Skip").bingeLabel(11).foregroundStyle(BingeTheme.accent)
+                            .padding(.vertical, 8).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, BingeTheme.gutter).padding(.top, 12).padding(.bottom, 10)
+                BingeRule(strong: true)
+
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(items) { item in
+                            Button { ratingTarget = item } label: {
+                                HStack(spacing: 14) {
+                                    BingePoster(urlString: item.show.posterUrl, width: 48, height: 68)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(item.show.title).bingeHeadline(15).lineLimit(2)
+                                        Text("Tap to rate").bingeLabel(10).foregroundStyle(BingeTheme.inkMuted)
+                                    }
+                                    Spacer()
+                                    Text("★").bingeHeadline(16).foregroundStyle(BingeTheme.accentTint)
+                                }
+                                .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(BingeTheme.ink)
+                            BingeRule()
+                        }
+                    }
+                }
+
+                VStack(spacing: 9) {
+                    BingePrimaryButton(title: "Later") {
+                        isPresented = false
+                        onDismiss()
+                    }
+                }
+                .padding(.horizontal, BingeTheme.gutter).padding(.top, 12).padding(.bottom, 20)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(BingeTheme.ground)
+            .foregroundStyle(BingeTheme.ink)
+            .toolbar(.hidden, for: .navigationBar)
+            .sheet(item: $ratingTarget) { item in
+                BingeRatingSheet(title: item.show.title,
+                                 posterUrl: item.show.posterUrl,
+                                 itemId: item.show.id,
+                                 isMovie: false,
+                                 existingRating: item.rating) { _, _ in
+                    ratingTarget = nil
+                }
+            }
+        }
     }
 }

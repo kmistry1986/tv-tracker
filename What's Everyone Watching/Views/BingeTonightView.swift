@@ -251,25 +251,36 @@ final class TonightEngine: ObservableObject {
         }
 
         let trending = try await TMDBService.shared.getTrendingTV()
-        for result in trending {
-            guard picks.count < 15 else { break }
-            guard let id = result.id, !seen.contains(id) && !picks.contains(where: { $0.show.id == id }) else { continue }
-            let show = makeShow(from: result)
-            picks.append(TonightPick(show: show, friendsFinished: [],
-                                     averageFriendRating: nil,
-                                     service: try? await service(for: show),
-                                     isFallback: true))
-        }
-
         let trendingMovies = try await TMDBService.shared.getTrendingMovies()
-        for result in trendingMovies {
-            guard picks.count < 15 else { break }
-            guard let id = result.id, !seen.contains(id) && !picks.contains(where: { $0.show.id == id }) else { continue }
-            let show = makeShow(from: result)
-            picks.append(TonightPick(show: show, friendsFinished: [],
-                                     averageFriendRating: nil,
-                                     service: try? await service(for: show),
-                                     isFallback: true))
+
+        var tvIndex = 0, movieIndex = 0
+        while picks.count < 15 {
+            let hasTV = tvIndex < trending.count
+            let hasMovie = movieIndex < trendingMovies.count
+
+            if !hasTV && !hasMovie { break }
+
+            if hasTV && picks.count < 15 {
+                let result = trending[tvIndex]
+                tvIndex += 1
+                guard let id = result.id, !seen.contains(id) && !picks.contains(where: { $0.show.id == id }) else { continue }
+                let show = makeShow(from: result)
+                picks.append(TonightPick(show: show, friendsFinished: [],
+                                         averageFriendRating: nil,
+                                         service: try? await service(for: show),
+                                         isFallback: true))
+            }
+
+            if hasMovie && picks.count < 15 {
+                let result = trendingMovies[movieIndex]
+                movieIndex += 1
+                guard let id = result.id, !seen.contains(id) && !picks.contains(where: { $0.show.id == id }) else { continue }
+                let show = makeShow(from: result)
+                picks.append(TonightPick(show: show, friendsFinished: [],
+                                         averageFriendRating: nil,
+                                         service: try? await service(for: show),
+                                         isFallback: true))
+            }
         }
     }
 

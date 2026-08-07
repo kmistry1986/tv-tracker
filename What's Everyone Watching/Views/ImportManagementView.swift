@@ -429,11 +429,15 @@ struct NetflixImportView: View {
                                 continue
                             }
 
-                            try await supabase.insertUserShow(
-                                userId: userId,
-                                showId: firstResult.id,
-                                watchedDate: entry.date
-                            )
+                            // Check if this show is already in user's library to avoid duplicates
+                            let existingShows = (try? await supabase.fetchUserShows(userId: userId)) ?? []
+                            if !existingShows.contains(where: { $0.showId == firstResult.id }) {
+                                try await supabase.insertUserShow(
+                                    userId: userId,
+                                    showId: firstResult.id,
+                                    watchedDate: entry.date
+                                )
+                            }
 
                             let showDetail = try await tmdb.getTVShow(id: firstResult.id)
                             let tvShow = TVShow(
@@ -537,7 +541,12 @@ struct NetflixImportView: View {
                                 releaseDate: firstResult.releaseDate
                             )
                             try await supabase.insertMovie(movie: movie)
-                            try await supabase.insertUserMovie(userId: userId, movieId: firstResult.id, watchedDate: entry.date)
+
+                            // Check if this movie is already in user's library to avoid duplicates
+                            let existingMovies = (try? await supabase.fetchUserMovies(userId: userId)) ?? []
+                            if !existingMovies.contains(where: { $0.movieId == firstResult.id }) {
+                                try await supabase.insertUserMovie(userId: userId, movieId: firstResult.id, watchedDate: entry.date)
+                            }
                             successCount += 1
                         } else {
                             newFailedImports.append(FailedImport(title: entry.title, timestamp: now))
