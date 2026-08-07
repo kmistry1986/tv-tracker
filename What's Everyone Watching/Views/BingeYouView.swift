@@ -185,6 +185,16 @@ struct BingeYouView: View {
                     .cornerRadius(8)
                     .padding(BingeTheme.gutter)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .gesture(
+                        DragGesture()
+                            .onEnded { gesture in
+                                if gesture.translation.height > 50 {
+                                    withAnimation {
+                                        notificationManager.dismiss()
+                                    }
+                                }
+                            }
+                    )
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
             }
