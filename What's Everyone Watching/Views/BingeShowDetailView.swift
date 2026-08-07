@@ -363,32 +363,42 @@ struct BingeShowDetailView: View {
         do {
             guard let userId = supabase.currentUser?.id else { return }
 
-            // Insert episode record if marking as watched
-            if turningOn {
-                let episode = Episode(id: ep.id, showId: tmdbId, tmdbId: ep.id,
-                                    seasonNumber: ep.seasonNumber, episodeNumber: ep.episodeNumber,
-                                    name: ep.name, overview: ep.overview ?? "",
-                                    airDate: ep.airDate, userId: userId,
-                                    watched: true, watchedAt: ISO8601DateFormatter().string(from: Date()),
-                                    showTitle: details?.name)
-                try? await supabase.insertEpisode(episode: episode)
-            } else {
-                try await supabase.updateEpisodeWatched(episodeId: ep.id, watched: false)
-            }
-
-            if turningOn && wasEmpty {
-                try await supabase.moveWatchlistToLibrary(userId: userId, showId: dbShowId ?? tmdbId)
-                // Also remove from watchlist if it was there
-                try? await supabase.removeShowFromWatchlist(userId: userId, showId: dbShowId ?? tmdbId)
-            } else if !turningOn && watched.isEmpty {
-                try await supabase.removeFromLibraryIfNoWatchedEpisodes(userId: userId, showId: dbShowId ?? tmdbId)
-            }
-
+            // Update UI immediately, then run backend calls concurrently
             if isNowComplete && !wasComplete {
                 showRatingSheet = true
             }
+
+            // Run episode insert/update and state transitions concurrently
+            async let episodeOp = updateEpisode(ep: ep, turningOn: turningOn, userId: userId)
+            async let stateOp = updateLibraryState(turningOn: turningOn, wasEmpty: wasEmpty, userId: userId)
+
+            _ = try await (episodeOp, stateOp)
         } catch {
             if turningOn { watched.remove(ep.id) } else { watched.insert(ep.id) }
+        }
+    }
+
+    private func updateEpisode(ep: EpisodeDetail, turningOn: Bool, userId: String) async throws {
+        if turningOn {
+            let episode = Episode(id: ep.id, showId: tmdbId, tmdbId: ep.id,
+                                seasonNumber: ep.seasonNumber, episodeNumber: ep.episodeNumber,
+                                name: ep.name, overview: ep.overview ?? "",
+                                airDate: ep.airDate, userId: userId,
+                                watched: true, watchedAt: ISO8601DateFormatter().string(from: Date()),
+                                showTitle: details?.name)
+            try? await supabase.insertEpisode(episode: episode)
+        } else {
+            try await supabase.updateEpisodeWatched(episodeId: ep.id, watched: false)
+        }
+    }
+
+    private func updateLibraryState(turningOn: Bool, wasEmpty: Bool, userId: String) async throws {
+        if turningOn && wasEmpty {
+            async let move = supabase.moveWatchlistToLibrary(userId: userId, showId: dbShowId ?? tmdbId)
+            async let remove = supabase.removeShowFromWatchlist(userId: userId, showId: dbShowId ?? tmdbId)
+            _ = try await (move, remove)
+        } else if !turningOn && watched.isEmpty {
+            try await supabase.removeFromLibraryIfNoWatchedEpisodes(userId: userId, showId: dbShowId ?? tmdbId)
         }
     }
 
@@ -396,16 +406,28 @@ struct BingeShowDetailView: View {
         isWorking = true
         guard let userId = supabase.currentUser?.id else { isWorking = false; return }
 
-        for ep in episodesBySeason[season] ?? [] {
-            let episode = Episode(id: ep.id, showId: tmdbId, tmdbId: ep.id,
-                                seasonNumber: season, episodeNumber: ep.episodeNumber,
-                                name: ep.name, overview: ep.overview ?? "",
-                                airDate: ep.airDate, userId: userId,
-                                watched: on, watchedAt: on ? ISO8601DateFormatter().string(from: Date()) : nil,
-                                showTitle: details?.name)
-            try? await supabase.insertEpisode(episode: episode)
+        let episodes = episodesBySeason[season] ?? []
+
+        // Update UI first
+        for ep in episodes {
             if on { watched.insert(ep.id) } else { watched.remove(ep.id) }
         }
+
+        // Then run all insertions concurrently
+        await withTaskGroup(of: Void.self) { group in
+            for ep in episodes {
+                group.addTask {
+                    let episode = Episode(id: ep.id, showId: tmdbId, tmdbId: ep.id,
+                                        seasonNumber: season, episodeNumber: ep.episodeNumber,
+                                        name: ep.name, overview: ep.overview ?? "",
+                                        airDate: ep.airDate, userId: userId,
+                                        watched: on, watchedAt: on ? ISO8601DateFormatter().string(from: Date()) : nil,
+                                        showTitle: details?.name)
+                    try? await supabase.insertEpisode(episode: episode)
+                }
+            }
+        }
+
         isWorking = false
     }
 
@@ -414,18 +436,54 @@ struct BingeShowDetailView: View {
         isWorking = true
 
         let wasEmpty = watched.isEmpty
-        for s in seasons { await setSeason(s, watched: true) }
 
+        // Mark all episodes as watched optimistically
+        for s in seasons {
+            for ep in episodesBySeason[s] ?? [] {
+                watched.insert(ep.id)
+            }
+        }
+
+        // If moving from watchlist to library, update state immediately
         if wasEmpty && !isInLibrary {
-            try? await supabase.moveWatchlistToLibrary(userId: userId, showId: dbShowId ?? tmdbId)
             isInLibrary = true
         }
 
-        let rows = (try? await supabase.fetchEpisodes(showId: tmdbId, userId: userId)) ?? []
-        watched = Set(rows.filter { $0.watched }.map { $0.id })
+        // Run all backend operations concurrently
+        async let seasonOps = setAllSeasons(watched: true)
+        async let libraryOp = updateLibraryStateForFinish(wasEmpty: wasEmpty, userId: userId)
+
+        _ = try? await (seasonOps, libraryOp)
 
         isWorking = false
         if thenRate || rating == nil { showRatingSheet = true }
+    }
+
+    private func setAllSeasons(watched on: Bool) async {
+        guard let userId = supabase.currentUser?.id else { return }
+        await withTaskGroup(of: Void.self) { group in
+            for season in seasons {
+                group.addTask {
+                    for ep in episodesBySeason[season] ?? [] {
+                        let episode = Episode(id: ep.id, showId: tmdbId, tmdbId: ep.id,
+                                            seasonNumber: season, episodeNumber: ep.episodeNumber,
+                                            name: ep.name, overview: ep.overview ?? "",
+                                            airDate: ep.airDate, userId: userId,
+                                            watched: on, watchedAt: on ? ISO8601DateFormatter().string(from: Date()) : nil,
+                                            showTitle: details?.name)
+                        try? await supabase.insertEpisode(episode: episode)
+                    }
+                }
+            }
+        }
+    }
+
+    private func updateLibraryStateForFinish(wasEmpty: Bool, userId: String) async {
+        if wasEmpty && !isInLibrary {
+            async let move = supabase.moveWatchlistToLibrary(userId: userId, showId: dbShowId ?? tmdbId)
+            async let remove = supabase.removeShowFromWatchlist(userId: userId, showId: dbShowId ?? tmdbId)
+            _ = try? await (move, remove)
+        }
     }
 
     private func applySeasons(on: [Int], off: [Int]) async {
