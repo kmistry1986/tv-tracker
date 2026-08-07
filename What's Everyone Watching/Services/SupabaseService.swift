@@ -393,6 +393,8 @@ class SupabaseService: NSObject, ObservableObject {
     }
 
     func moveWatchlistToLibrary(userId: String, showId: Int) async throws {
+        let userShows = (try? await fetchUserShows(userId: userId)) ?? []
+        guard !userShows.contains(where: { $0.showId == showId }) else { return }
         let today = ISO8601DateFormatter().string(from: Date())
         try await insertUserShow(userId: userId, showId: showId, watchedDate: today)
     }
