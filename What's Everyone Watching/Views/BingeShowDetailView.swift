@@ -397,6 +397,7 @@ struct BingeShowDetailView: View {
 
         if wasEmpty {
             try? await supabase.moveWatchlistToLibrary(userId: userId, showId: dbShowId ?? tmdbId)
+            isInLibrary = true
         }
 
         isWorking = false
