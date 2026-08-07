@@ -425,9 +425,15 @@ struct BingeSearchView: View {
     private func resultRow(_ result: BingeSearchResult) -> some View {
         HStack(alignment: .top, spacing: 12) {
             NavigationLink {
-                BingeDetailView(tmdbId: result.tmdbId,
+                if result.isMovie {
+                    BingeMovieDetailView(tmdbId: result.tmdbId,
+                                         dbMovieId: result.tmdbId,
+                                         title: result.title)
+                } else {
+                    BingeDetailView(tmdbId: result.tmdbId,
                                     dbShowId: result.tmdbId,
                                     title: result.title)
+                }
             } label: {
                 HStack(alignment: .top, spacing: 12) {
                     BingePoster(urlString: result.posterUrl, width: 52, height: 74)
@@ -446,7 +452,6 @@ struct BingeSearchView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(result.isMovie)                 // no movie detail screen yet
 
             actions(result)
         }
