@@ -165,13 +165,14 @@ struct BingePrimaryButton: View {
 struct BingeOutlineButton: View {
     let title: String
     var onDark = false
+    var labelSize: CGFloat = 12
     var action: () -> Void = {}
     var body: some View {
         Button(action: action) {
             Text(title)
-                .bingeLabel(12)
+                .bingeLabel(labelSize)
                 .frame(maxWidth: .infinity, alignment: .leading)   // flush left, always
-                .padding(.horizontal, 16).padding(.vertical, 14)
+                .padding(.horizontal, 14).padding(.vertical, 12)
                 .frame(minHeight: BingeTheme.minTap)
                 .foregroundStyle(onDark ? BingeTheme.inkFaint : BingeTheme.ink)
                 .overlay(Rectangle().stroke(onDark ? BingeTheme.onDarkMuted : BingeTheme.ink, lineWidth: 1))
@@ -380,11 +381,11 @@ struct BingeSourceBand: View {
     let statement: String
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(kicker).bingeLabel(10).foregroundStyle(.white.opacity(0.85))
-            Text(statement).bingeHeadline(17).fixedSize(horizontal: false, vertical: true)
+            Text(kicker).bingeLabel(9).foregroundStyle(.white.opacity(0.85))
+            Text(statement).bingeHeadline(14).fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 14)
+        .padding(.horizontal, 17).padding(.vertical, 12)
         .background(BingeTheme.accent)
         .foregroundStyle(.white)
         .accessibilityElement(children: .combine)

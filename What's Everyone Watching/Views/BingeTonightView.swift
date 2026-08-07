@@ -226,9 +226,11 @@ final class TonightEngine: ObservableObject {
                   })
             else { continue }
 
-            pick = TonightPick(show: makeShow(from: first),
+            let show = makeShow(from: first)
+            pick = TonightPick(show: show,
                                friendsFinished: [], averageFriendRating: nil,
-                               service: nil, isFallback: true, seedTitle: seed.title)
+                               service: try? await service(for: show),
+                               isFallback: true, seedTitle: seed.title)
             return
         }
 
@@ -237,8 +239,11 @@ final class TonightEngine: ObservableObject {
             guard let id = r.id else { return false }
             return !seen.contains(id)
         }) else { return }
-        pick = TonightPick(show: makeShow(from: first), friendsFinished: [],
-                           averageFriendRating: nil, service: nil, isFallback: true)
+        let show = makeShow(from: first)
+        pick = TonightPick(show: show, friendsFinished: [],
+                           averageFriendRating: nil,
+                           service: try? await service(for: show),
+                           isFallback: true)
     }
 
     private func makeShow(from r: SearchResult) -> TVShow {
@@ -283,12 +288,12 @@ struct BingeTonightView: View {
 
     private var header: some View {
         HStack {
-            Text(weekday).bingeLabel(11).foregroundStyle(BingeTheme.accentTint)
+            Text(weekday).bingeLabel(9).foregroundStyle(BingeTheme.accentTint)
             Spacer()
             Text(engine.friends.isEmpty ? "0 friends yet" : "\(engine.friends.count) friends")
-                .bingeLabel(11).foregroundStyle(BingeTheme.onDarkMuted)
+                .bingeLabel(9).foregroundStyle(BingeTheme.onDarkMuted)
         }
-        .padding(.horizontal, BingeTheme.gutter).padding(.top, 8).padding(.bottom, 10)
+        .padding(.horizontal, BingeTheme.gutter).padding(.top, 7).padding(.bottom, 9)
     }
 
     private var loading: some View {
@@ -321,23 +326,30 @@ struct BingeTonightView: View {
 
     private func content(_ pick: TonightPick) -> some View {
         VStack(spacing: 0) {
-            ZStack(alignment: .bottomLeading) {
-                BingePoster(urlString: pick.show.posterUrl, width: nil, height: nil, cropAnchor: .top)
-                LinearGradient(colors: [BingeTheme.ink.opacity(0.94), BingeTheme.ink.opacity(0)],
-                               startPoint: .bottom, endPoint: .top)
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(pick.show.title.uppercased())
-                        .bingeDisplay(46)
-                        .foregroundStyle(BingeTheme.ground)
-                        .lineLimit(3)
-                        .minimumScaleFactor(0.55)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(metaLine(pick)).bingeLabel(12).foregroundStyle(BingeTheme.inkFaint)
+            Color.clear
+                .frame(minHeight: 150, maxHeight: .infinity)
+                .background(
+                    BingePoster(urlString: pick.show.posterUrl, width: nil, height: nil, cropAnchor: .top)
+                )
+                .overlay(
+                    LinearGradient(colors: [BingeTheme.ink.opacity(0.94), BingeTheme.ink.opacity(0)],
+                                   startPoint: .bottom, endPoint: .top)
+                )
+                .overlay(alignment: .bottomLeading) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(pick.show.title.isEmpty ? "Untitled" : pick.show.title.uppercased())
+                            .bingeDisplay(39)
+                            .foregroundStyle(BingeTheme.ground)
+                            .lineLimit(3)
+                            .minimumScaleFactor(0.55)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(metaLine(pick)).bingeLabel(10).foregroundStyle(BingeTheme.inkFaint)
+                    }
+                    .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 15)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 18)
-            }
-            .frame(minHeight: 150, maxHeight: .infinity).clipped()
-            .layoutPriority(0)
+                .clipped()
+                .layoutPriority(0)
 
             ScrollView {
                 VStack(spacing: 0) {
@@ -348,19 +360,19 @@ struct BingeTonightView: View {
 
                     if engine.friends.count < 3 {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("This gets better fast").bingeLabel(11).foregroundStyle(BingeTheme.onDarkMuted)
+                            Text("This gets better fast").bingeLabel(9).foregroundStyle(BingeTheme.onDarkMuted)
                             Text("Add three people you actually know and Tonight starts naming names.")
-                                .bingeBody(14).foregroundStyle(BingeTheme.inkFaint)
+                                .bingeBody(12).foregroundStyle(BingeTheme.inkFaint)
                                 .fixedSize(horizontal: false, vertical: true)
                             Button { tab = .friends } label: {
-                                Text("Find your people →").bingeLabel(12)
+                                Text("Find your people →").bingeLabel(10)
                                     .foregroundStyle(BingeTheme.accentTint)
                                     .padding(.vertical, 6).contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 14)
+                        .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 12)
                         BingeRule(onDark: true)
                     }
                 }
@@ -370,54 +382,51 @@ struct BingeTonightView: View {
             .scrollBounceBehavior(.basedOnSize)
             .layoutPriority(1)
 
-            VStack(spacing: 10) {
+            VStack(spacing: 9) {
                 NavigationLink {
                     BingeShowDetailView(tmdbId: pick.show.tmdbId,
                                         dbShowId: pick.show.id,
                                         title: pick.show.title)
                 } label: {
                     HStack {
-                        Text("Open \(pick.show.title)").bingeHeadline(13).textCase(.uppercase)
+                        Text("Open \(pick.show.title)").bingeHeadline(11).textCase(.uppercase)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 12)
-                        Text("→").bingeHeadline(13)
+                        Text("→").bingeHeadline(11)
                     }
-                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .padding(.horizontal, 14).padding(.vertical, 9)
                     .frame(maxWidth: .infinity, minHeight: BingeTheme.minTap)
                     .background(BingeTheme.ground)
                     .foregroundStyle(BingeTheme.ink)
                 }
                 .buttonStyle(.plain)
 
-                HStack(spacing: 10) {
-                    BingeOutlineButton(title: "Not tonight", onDark: true) {
+                HStack(spacing: 9) {
+                    BingeOutlineButton(title: "Not tonight", onDark: true, labelSize: 10) {
                         Task { await engine.skipCurrent() }
                     }
                     if engine.isOnWatchlist {
-                        BingeOutlineButton(title: "On Watchlist", onDark: true) {}
+                        BingeOutlineButton(title: "On Watchlist", onDark: true, labelSize: 10) {}
                     } else {
-                        BingeOutlineButton(title: "Save it", onDark: true) {
+                        BingeOutlineButton(title: "Save it", onDark: true, labelSize: 10) {
                             Task { await engine.saveCurrent() }
                         }
                     }
                 }
             }
             .padding(.horizontal, BingeTheme.gutter)
-            .padding(.vertical, 14)
+            .padding(.vertical, 12)
             .fixedSize(horizontal: false, vertical: true)
             .layoutPriority(1)
         }
     }
 
     private func metaLine(_ pick: TonightPick) -> String {
-        var parts: [String] = []
-        if let d = pick.show.firstAirDate, d.count >= 4 { parts.append(String(d.prefix(4))) }
-        parts.append("Series")
-        if pick.show.numberOfEpisodes > 0 { parts.append("\(pick.show.numberOfEpisodes) eps") }
-        if let s = pick.service { parts.append(s) }
-        return parts.joined(separator: " · ")
+        var parts: [String] = ["Series"]
+        if let s = pick.service, !s.isEmpty { parts.append(s) }
+        return parts.joined(separator: " | ")
     }
 
     private var weekday: String {
