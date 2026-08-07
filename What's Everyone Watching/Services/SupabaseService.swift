@@ -1140,6 +1140,45 @@ extension SupabaseService {
         let results: [StreamingPlatformRow] = try await fetch(endpoint: endpoint)
         return results
     }
+
+    func mergeMaxIntoHBOMax() async throws {
+        guard let userId = currentUser?.id else { return }
+
+        // Find the Max and HBO Max platform IDs
+        let platforms = try await getStreamingPlatforms()
+        guard let maxPlatform = platforms.first(where: { $0.display_name == "Max" }),
+              let hboMaxPlatform = platforms.first(where: { $0.display_name == "HBO Max" }) else {
+            print("Max or HBO Max platform not found")
+            return
+        }
+
+        // Update user_streaming_preferences to replace Max with HBO Max
+        let endpoint = "\(supabaseURL)/rest/v1/user_streaming_preferences?user_id=eq.\(userId)&streaming_platform_id=eq.\(maxPlatform.id)"
+        var request = URLRequest(url: URL(string: endpoint)!)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        if !authToken.isEmpty {
+            request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
+
+        struct UpdateBody: Encodable {
+            let streaming_platform_id: Int
+        }
+
+        let body = UpdateBody(streaming_platform_id: hboMaxPlatform.id)
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+
+        if statusCode == 200 || statusCode == 204 {
+            print("✅ Successfully merged Max into HBO Max")
+        } else {
+            let responseStr = String(data: data, encoding: .utf8) ?? ""
+            print("⚠️ Failed to merge Max into HBO Max: status=\(statusCode), response=\(responseStr)")
+        }
+    }
 }
 
 // MARK: - Data Management

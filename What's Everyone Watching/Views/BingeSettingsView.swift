@@ -38,6 +38,9 @@ final class BingeSettingsEngine: ObservableObject {
 
         platforms = (try? await supabase.getStreamingPlatforms()) ?? []
         selected = Set((try? await supabase.getUserPlatforms(userId: userId)) ?? [])
+
+        // Merge Max into HBO Max if both exist
+        try? await supabase.mergeMaxIntoHBOMax()
     }
 
     func toggle(_ id: Int) {
