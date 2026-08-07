@@ -381,16 +381,8 @@ struct BingeShowDetailView: View {
 
     private func setSeason(_ season: Int, watched on: Bool) async {
         isWorking = true
-        guard let userId = supabase.currentUser?.id else { isWorking = false; return }
-
         for ep in episodesBySeason[season] ?? [] {
-            let episode = Episode(id: ep.id, showId: tmdbId, tmdbId: ep.id,
-                                seasonNumber: season, episodeNumber: ep.episodeNumber,
-                                name: ep.name, overview: ep.overview ?? "",
-                                airDate: ep.airDate, userId: userId,
-                                watched: on, watchedAt: on ? ISO8601DateFormatter().string(from: Date()) : nil,
-                                showTitle: details?.name)
-            try? await supabase.insertEpisode(episode: episode)
+            try? await supabase.updateEpisodeWatched(episodeId: ep.id, watched: on)
             if on { watched.insert(ep.id) } else { watched.remove(ep.id) }
         }
         isWorking = false
@@ -403,7 +395,7 @@ struct BingeShowDetailView: View {
         let wasEmpty = watched.isEmpty
         for s in seasons { await setSeason(s, watched: true) }
 
-        if wasEmpty {
+        if wasEmpty && !isInLibrary {
             try? await supabase.moveWatchlistToLibrary(userId: userId, showId: dbShowId ?? tmdbId)
             isInLibrary = true
         }

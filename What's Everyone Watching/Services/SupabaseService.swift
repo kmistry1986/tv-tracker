@@ -381,10 +381,15 @@ class SupabaseService: NSObject, ObservableObject {
         let body = UpdateBody(watched: watched, watched_at: watchedAt)
         request.httpBody = try JSONEncoder().encode(body)
 
-        let (_, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 204 else {
-            throw NSError(domain: "API", code: -1, userInfo: [NSLocalizedDescriptionKey: "Update failed"])
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+
+        if statusCode == 204 || statusCode == 200 {
+            return
         }
+
+        let responseStr = String(data: data, encoding: .utf8) ?? ""
+        print("⚠️ updateEpisodeWatched failed: status=\(statusCode), response=\(responseStr)")
     }
 
     func moveWatchlistToLibrary(userId: String, showId: Int) async throws {
