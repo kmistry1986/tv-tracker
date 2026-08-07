@@ -173,7 +173,7 @@ class SupabaseService: NSObject, ObservableObject {
             self.isLoggedIn = true
             self.saveSession(user: user, token: token, refreshToken: refToken)
         }
-        
+
         return user
     }
     
@@ -528,7 +528,12 @@ class SupabaseService: NSObject, ObservableObject {
         let endpoint = "\(supabaseURL)/rest/v1/user_movies?user_id=eq.\(userId)"
         return try await fetch(endpoint: endpoint)
     }
-    
+
+    func fetchMovieById(id: Int) async throws -> Movie {
+        let endpoint = "\(supabaseURL)/rest/v1/movies?id=eq.\(id)"
+        return try await fetchSingle(endpoint: endpoint)
+    }
+
     func fetchActivityFeed(userId: String) async throws -> [ActivityFeedItem] {
         let endpoint = "\(supabaseURL)/rest/v1/activity?user_id=eq.\(userId)&order=created_at.desc"
         return try await fetch(endpoint: endpoint)
@@ -586,6 +591,15 @@ class SupabaseService: NSObject, ObservableObject {
             return
         }
 
+        // Fetch show from TMDB and insert into tv_shows table
+        if let tmdbShow = try? await TMDBService.shared.getTVShow(id: showId) {
+            let show = TVShow(id: showId, tmdbId: showId, title: tmdbShow.name,
+                            overview: tmdbShow.overview, posterUrl: tmdbShow.imageUrl,
+                            firstAirDate: tmdbShow.firstAirDate, numberOfSeasons: tmdbShow.numberOfSeasons,
+                            numberOfEpisodes: tmdbShow.numberOfEpisodes)
+            try? await insertShow(show: show)
+        }
+
         let endpoint = "\(supabaseURL)/rest/v1/watchlist_shows"
         print("Adding to watchlist with userId: '\(userId)'")
 
@@ -615,6 +629,14 @@ class SupabaseService: NSObject, ObservableObject {
             return
         }
 
+        // Fetch movie from TMDB and insert into movies table
+        if let tmdbMovie = try? await TMDBService.shared.getMovie(id: movieId) {
+            let movie = Movie(id: movieId, tmdbId: movieId, title: tmdbMovie.title,
+                            overview: tmdbMovie.overview, posterUrl: tmdbMovie.imageUrl,
+                            releaseDate: tmdbMovie.releaseDate)
+            try? await insertMovie(movie: movie)
+        }
+
         let endpoint = "\(supabaseURL)/rest/v1/watchlist_movies"
         print("Adding to watchlist with userId: '\(userId)'")
 
@@ -640,7 +662,12 @@ class SupabaseService: NSObject, ObservableObject {
         let endpoint = "\(supabaseURL)/rest/v1/watchlist_shows?id=eq.\(id)"
         try await delete(endpoint: endpoint)
     }
-    
+
+    func removeShowFromWatchlist(userId: String, showId: Int) async throws {
+        let endpoint = "\(supabaseURL)/rest/v1/watchlist_shows?user_id=eq.\(userId)&show_id=eq.\(showId)"
+        try await delete(endpoint: endpoint)
+    }
+
     func removeFromWatchlistMovie(id: Int) async throws {
         let endpoint = "\(supabaseURL)/rest/v1/watchlist_movies?id=eq.\(id)"
         try await delete(endpoint: endpoint)
@@ -1091,5 +1118,69 @@ extension SupabaseService {
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
             throw NSError(domain: "DeleteError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to delete data"])
         }
+    }
+
+    // MARK: - Reconciliation
+
+    func reconcileWatchlistWithTables() async {
+        print("Starting watchlist reconciliation...")
+        var showsReconciled = 0
+        var moviesReconciled = 0
+        var showsFailed = 0
+        var moviesFailed = 0
+
+        // Reconcile shows
+        do {
+            let watchlistShows = try await fetchWatchlistShows(userId: currentUser?.id ?? "")
+            for watchlistShow in watchlistShows {
+                if let existing = try? await fetchShowById(id: watchlistShow.showId) {
+                    print("Show \(watchlistShow.showId) already exists in tv_shows")
+                    continue
+                }
+                do {
+                    let tmdbShow = try await TMDBService.shared.getTVShow(id: watchlistShow.showId)
+                    let show = TVShow(id: watchlistShow.showId, tmdbId: watchlistShow.showId,
+                                    title: tmdbShow.name, overview: tmdbShow.overview,
+                                    posterUrl: tmdbShow.imageUrl, firstAirDate: tmdbShow.firstAirDate,
+                                    numberOfSeasons: tmdbShow.numberOfSeasons,
+                                    numberOfEpisodes: tmdbShow.numberOfEpisodes)
+                    try await insertShow(show: show)
+                    print("✅ Inserted show \(watchlistShow.showId): \(tmdbShow.name)")
+                    showsReconciled += 1
+                } catch {
+                    print("❌ Failed to reconcile show \(watchlistShow.showId): \(error.localizedDescription)")
+                    showsFailed += 1
+                }
+            }
+        } catch {
+            print("Error fetching watchlist shows: \(error)")
+        }
+
+        // Reconcile movies
+        do {
+            let watchlistMovies = try await fetchWatchlistMovies(userId: currentUser?.id ?? "")
+            for watchlistMovie in watchlistMovies {
+                if let existing = try? await fetchMovieById(id: watchlistMovie.movieId) {
+                    print("Movie \(watchlistMovie.movieId) already exists in movies")
+                    continue
+                }
+                do {
+                    let tmdbMovie = try await TMDBService.shared.getMovie(id: watchlistMovie.movieId)
+                    let movie = Movie(id: watchlistMovie.movieId, tmdbId: watchlistMovie.movieId,
+                                    title: tmdbMovie.title, overview: tmdbMovie.overview,
+                                    posterUrl: tmdbMovie.imageUrl, releaseDate: tmdbMovie.releaseDate)
+                    try await insertMovie(movie: movie)
+                    print("✅ Inserted movie \(watchlistMovie.movieId): \(tmdbMovie.title)")
+                    moviesReconciled += 1
+                } catch {
+                    print("❌ Failed to reconcile movie \(watchlistMovie.movieId): \(error.localizedDescription)")
+                    moviesFailed += 1
+                }
+            }
+        } catch {
+            print("Error fetching watchlist movies: \(error)")
+        }
+
+        print("Reconciliation complete: \(showsReconciled) shows and \(moviesReconciled) movies added. Failed: \(showsFailed) shows, \(moviesFailed) movies")
     }
 }

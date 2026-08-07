@@ -63,6 +63,19 @@ final class BingeYouEngine: ObservableObject {
     var watching: [BingeLibraryItem] { library.filter { $0.isWatching } }
     var finished: [BingeLibraryItem] { library.filter { $0.isFinished } }
 
+    func delete(item: BingeLibraryItem) async {
+        do {
+            if item.isWatchlist {
+                try await supabase.removeFromWatchlistShow(id: item.id)
+            } else {
+                try await supabase.removeUserShow(id: item.id)
+            }
+            await load()
+        } catch {
+            print("Failed to delete item: \(error)")
+        }
+    }
+
     func load() async {
         guard let userId = supabase.currentUser?.id else { return }
         isLoading = true
@@ -260,6 +273,13 @@ struct BingeYouView: View {
                             .buttonStyle(.plain)
                             trailingAction(item)
                                 .padding(.trailing, BingeTheme.gutter)
+                        }
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                Task { await engine.delete(item: item) }
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
                         }
                         BingeRule()
                     }

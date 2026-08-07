@@ -55,11 +55,13 @@ enum BingeGraphStage {
 
 @MainActor
 final class TonightEngine: ObservableObject {
-    @Published var pick: TonightPick?
+    @Published var picks: [TonightPick] = []
+    @Published var currentIndex = 0
     @Published var friends: [User] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var watchlist: [Int] = []
+    @Published var visibleIndex = 0
     /// Shows already dismissed this session, so "Show me another" advances.
     private var skipped: Set<Int> = []
 
@@ -67,8 +69,11 @@ final class TonightEngine: ObservableObject {
 
     var stage: BingeGraphStage { .from(friendCount: friends.count) }
 
+    var pick: TonightPick? { currentIndex < picks.count ? picks[currentIndex] : nil }
+    var visiblePick: TonightPick? { visibleIndex < picks.count ? picks[visibleIndex] : nil }
+
     var isOnWatchlist: Bool {
-        guard let pick else { return false }
+        guard let pick = visiblePick else { return false }
         return watchlist.contains(pick.show.id)
     }
 
@@ -164,13 +169,13 @@ final class TonightEngine: ObservableObject {
             }
 
             for (showId, entry) in ranked {
+                guard picks.count < 15 else { break }
                 if let show = try? await resolveShow(id: showId) {
-                    pick = TonightPick(show: show,
-                                       friendsFinished: entry.who,
-                                       averageFriendRating: average(entry.ratings),
-                                       service: try? await service(for: show),
-                                       isFallback: false)
-                    return
+                    picks.append(TonightPick(show: show,
+                                             friendsFinished: entry.who,
+                                             averageFriendRating: average(entry.ratings),
+                                             service: try? await service(for: show),
+                                             isFallback: false))
                 }
             }
 
@@ -183,13 +188,24 @@ final class TonightEngine: ObservableObject {
 
     func skipCurrent() async {
         if let id = pick?.show.id { skipped.insert(id) }
-        pick = nil
-        await load()
+        currentIndex = (currentIndex + 1) % max(1, picks.count)
     }
 
     func saveCurrent() async {
-        guard let userId = supabase.currentUser?.id, let show = pick?.show else { return }
-        try? await supabase.addToWatchlistShow(userId: userId, showId: show.id, priority: "high")
+        guard let userId = supabase.currentUser?.id, let show = visiblePick?.show else { return }
+        if isOnWatchlist {
+            do {
+                try await supabase.removeShowFromWatchlist(userId: userId, showId: show.id)
+                watchlist.removeAll { $0 == show.id }
+            } catch {
+                print("Failed to remove from watchlist: \(error)")
+            }
+        } else {
+            try? await supabase.addToWatchlistShow(userId: userId, showId: show.id, priority: "high")
+            if !watchlist.contains(show.id) {
+                watchlist.append(show.id)
+            }
+        }
     }
 
     // MARK: Helpers
@@ -218,32 +234,43 @@ final class TonightEngine: ObservableObject {
             .sorted { ($0.rating ?? 0) > ($1.rating ?? 0) }
 
         for row in best {
+            guard picks.count < 15 else { break }
             guard let seed = try? await resolveShow(id: row.showId) else { continue }
             guard let recs = try? await TMDBService.shared.getSimilarTV(tvId: seed.tmdbId),
                   let first = recs.first(where: { r in
                       guard let id = r.id else { return false }
-                      return !seen.contains(id)
+                      return !seen.contains(id) && !picks.contains(where: { $0.show.id == id })
                   })
             else { continue }
 
             let show = makeShow(from: first)
-            pick = TonightPick(show: show,
-                               friendsFinished: [], averageFriendRating: nil,
-                               service: try? await service(for: show),
-                               isFallback: true, seedTitle: seed.title)
-            return
+            picks.append(TonightPick(show: show,
+                                     friendsFinished: [], averageFriendRating: nil,
+                                     service: try? await service(for: show),
+                                     isFallback: true, seedTitle: seed.title))
         }
 
         let trending = try await TMDBService.shared.getTrendingTV()
-        guard let first = trending.first(where: { r in
-            guard let id = r.id else { return false }
-            return !seen.contains(id)
-        }) else { return }
-        let show = makeShow(from: first)
-        pick = TonightPick(show: show, friendsFinished: [],
-                           averageFriendRating: nil,
-                           service: try? await service(for: show),
-                           isFallback: true)
+        for result in trending {
+            guard picks.count < 15 else { break }
+            guard let id = result.id, !seen.contains(id) && !picks.contains(where: { $0.show.id == id }) else { continue }
+            let show = makeShow(from: result)
+            picks.append(TonightPick(show: show, friendsFinished: [],
+                                     averageFriendRating: nil,
+                                     service: try? await service(for: show),
+                                     isFallback: true))
+        }
+
+        let trendingMovies = try await TMDBService.shared.getTrendingMovies()
+        for result in trendingMovies {
+            guard picks.count < 15 else { break }
+            guard let id = result.id, !seen.contains(id) && !picks.contains(where: { $0.show.id == id }) else { continue }
+            let show = makeShow(from: result)
+            picks.append(TonightPick(show: show, friendsFinished: [],
+                                     averageFriendRating: nil,
+                                     service: try? await service(for: show),
+                                     isFallback: true))
+        }
     }
 
     private func makeShow(from r: SearchResult) -> TVShow {
@@ -273,6 +300,7 @@ struct BingeTonightView: View {
                 loading
             } else if let pick = engine.pick {
                 content(pick)
+                    .id(engine.currentIndex)
             } else {
                 empty
             }
@@ -326,30 +354,96 @@ struct BingeTonightView: View {
 
     private func content(_ pick: TonightPick) -> some View {
         VStack(spacing: 0) {
-            Color.clear
-                .frame(minHeight: 150, maxHeight: .infinity)
-                .background(
-                    BingePoster(urlString: pick.show.posterUrl, width: nil, height: nil, cropAnchor: .top)
-                )
-                .overlay(
-                    LinearGradient(colors: [BingeTheme.ink.opacity(0.94), BingeTheme.ink.opacity(0)],
-                                   startPoint: .bottom, endPoint: .top)
-                )
-                .overlay(alignment: .bottomLeading) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(pick.show.title.isEmpty ? "Untitled" : pick.show.title.uppercased())
-                            .bingeDisplay(39)
-                            .foregroundStyle(BingeTheme.ground)
-                            .lineLimit(3)
-                            .minimumScaleFactor(0.55)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(metaLine(pick)).bingeLabel(10).foregroundStyle(BingeTheme.inkFaint)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 0) {
+                        ForEach(engine.picks.indices, id: \.self) { index in
+                            GeometryReader { geo in
+                                Color.clear
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                    .background(
+                                        BingePoster(urlString: engine.picks[index].show.posterUrl, width: nil, height: nil, cropAnchor: .top)
+                                    )
+                                    .overlay(
+                                        LinearGradient(colors: [BingeTheme.ink.opacity(0.94), BingeTheme.ink.opacity(0)],
+                                                       startPoint: .bottom, endPoint: .top)
+                                    )
+                                    .overlay(alignment: .bottomLeading) {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            Text(engine.picks[index].show.title.isEmpty ? "Untitled" : engine.picks[index].show.title.uppercased())
+                                                .bingeDisplay(39)
+                                                .foregroundStyle(BingeTheme.ground)
+                                                .lineLimit(3)
+                                                .minimumScaleFactor(0.55)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                            Text(metaLine(engine.picks[index])).bingeLabel(10).foregroundStyle(BingeTheme.inkFaint)
+                                        }
+                                        .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 15)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    .clipped()
+                                    .onGeometryChange(for: Bool.self) { geometry in
+                                        let frame = geometry.frame(in: .global)
+                                        let isVisible = frame.minX >= 0 && frame.maxX <= UIScreen.main.bounds.width
+                                        return isVisible
+                                    } action: { isVisible in
+                                        if isVisible {
+                                            engine.visibleIndex = index
+                                        }
+                                    }
+                            }
+                            .containerRelativeFrame(.horizontal)
+                            .id(index)
+                        }
+                        if !engine.picks.isEmpty {
+                            GeometryReader { geo in
+                                Color.clear
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                    .background(
+                                        BingePoster(urlString: engine.picks[0].show.posterUrl, width: nil, height: nil, cropAnchor: .top)
+                                    )
+                                    .overlay(
+                                        LinearGradient(colors: [BingeTheme.ink.opacity(0.94), BingeTheme.ink.opacity(0)],
+                                                       startPoint: .bottom, endPoint: .top)
+                                    )
+                                    .overlay(alignment: .bottomLeading) {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            Text(engine.picks[0].show.title.isEmpty ? "Untitled" : engine.picks[0].show.title.uppercased())
+                                                .bingeDisplay(39)
+                                                .foregroundStyle(BingeTheme.ground)
+                                                .lineLimit(3)
+                                                .minimumScaleFactor(0.55)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                            Text(metaLine(engine.picks[0])).bingeLabel(10).foregroundStyle(BingeTheme.inkFaint)
+                                        }
+                                        .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 15)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    .clipped()
+                                    .onGeometryChange(for: Bool.self) { geometry in
+                                        let frame = geometry.frame(in: .global)
+                                        let isVisible = frame.minX >= 0 && frame.maxX <= UIScreen.main.bounds.width
+                                        return isVisible
+                                    } action: { isVisible in
+                                        if isVisible {
+                                            engine.visibleIndex = 0
+                                        }
+                                    }
+                            }
+                            .containerRelativeFrame(.horizontal)
+                            .id(engine.picks.count)
+                        }
                     }
-                    .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 15)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .clipped()
-                .layoutPriority(0)
+                .scrollTargetBehavior(.paging)
+                .onChange(of: engine.currentIndex) { oldValue, newValue in
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        proxy.scrollTo(newValue, anchor: .center)
+                    }
+                }
+            }
+            .frame(minHeight: 150, maxHeight: .infinity)
+            .layoutPriority(0)
 
             ScrollView {
                 VStack(spacing: 0) {
@@ -383,35 +477,39 @@ struct BingeTonightView: View {
             .layoutPriority(1)
 
             VStack(spacing: 9) {
-                NavigationLink {
-                    BingeShowDetailView(tmdbId: pick.show.tmdbId,
-                                        dbShowId: pick.show.id,
-                                        title: pick.show.title)
-                } label: {
-                    HStack {
-                        Text("Open \(pick.show.title)").bingeHeadline(11).textCase(.uppercase)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 12)
-                        Text("→").bingeHeadline(11)
+                if let visiblePick = engine.visiblePick {
+                    NavigationLink {
+                        BingeShowDetailView(tmdbId: visiblePick.show.tmdbId,
+                                            dbShowId: visiblePick.show.id,
+                                            title: visiblePick.show.title)
+                    } label: {
+                        HStack {
+                            Text("Open \(visiblePick.show.title)").bingeHeadline(11).textCase(.uppercase)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 12)
+                            Text("→").bingeHeadline(11)
+                        }
+                        .padding(.horizontal, 14).padding(.vertical, 9)
+                        .frame(maxWidth: .infinity, minHeight: BingeTheme.minTap)
+                        .background(BingeTheme.ground)
+                        .foregroundStyle(BingeTheme.ink)
                     }
-                    .padding(.horizontal, 14).padding(.vertical, 9)
-                    .frame(maxWidth: .infinity, minHeight: BingeTheme.minTap)
-                    .background(BingeTheme.ground)
-                    .foregroundStyle(BingeTheme.ink)
-                }
-                .buttonStyle(.plain)
+                    .buttonStyle(.plain)
 
-                HStack(spacing: 9) {
-                    BingeOutlineButton(title: "Not tonight", onDark: true, labelSize: 10) {
-                        Task { await engine.skipCurrent() }
-                    }
-                    if engine.isOnWatchlist {
-                        BingeOutlineButton(title: "On Watchlist", onDark: true, labelSize: 10) {}
-                    } else {
-                        BingeOutlineButton(title: "Save it", onDark: true, labelSize: 10) {
-                            Task { await engine.saveCurrent() }
+                    HStack(spacing: 9) {
+                        BingeOutlineButton(title: "Not tonight", onDark: true, labelSize: 10) {
+                            Task { await engine.skipCurrent() }
+                        }
+                        if engine.isOnWatchlist {
+                            BingeOutlineButton(title: "On Watchlist", onDark: true, labelSize: 10) {
+                                Task { await engine.saveCurrent() }
+                            }
+                        } else {
+                            BingeOutlineButton(title: "Save it", onDark: true, labelSize: 10) {
+                                Task { await engine.saveCurrent() }
+                            }
                         }
                     }
                 }

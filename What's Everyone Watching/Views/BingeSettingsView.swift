@@ -19,6 +19,7 @@ final class BingeSettingsEngine: ObservableObject {
     @Published var isSaving = false
     @Published var message: String?
     @Published var showClearConfirm = false
+    @Published var isReconciling = false
 
     private let supabase = SupabaseService.shared
 
@@ -80,6 +81,13 @@ final class BingeSettingsEngine: ObservableObject {
     }
 
     func signOut() { supabase.signOut() }
+
+    func reconcile() async {
+        isReconciling = true
+        defer { isReconciling = false }
+        await supabase.reconcileWatchlistWithTables()
+        message = "Reconciliation complete."
+    }
 }
 
 struct BingeSettingsView: View {
@@ -242,6 +250,9 @@ struct BingeSettingsView: View {
                 HStack(spacing: 8) {
                     BingeChip(title: "Clear history", muted: true) {
                         engine.showClearConfirm = true
+                    }
+                    BingeChip(title: "Reconcile watchlist", muted: true) {
+                        Task { await engine.reconcile() }
                     }
                     BingeChip(title: "Sign out") { engine.signOut() }
                 }
