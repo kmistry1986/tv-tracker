@@ -6,7 +6,7 @@ final class NotificationManager: ObservableObject {
     @Published var message: String?
     private var dismissTask: Task<Void, Never>?
 
-    func show(_ text: String, duration: TimeInterval = 2.0) {
+    func show(_ text: String, duration: TimeInterval = 5.0) {
         dismissTask?.cancel()
         message = text
         dismissTask = Task {
