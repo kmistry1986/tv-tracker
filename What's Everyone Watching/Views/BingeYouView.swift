@@ -141,7 +141,7 @@ struct BingeYouView: View {
     @State private var ratingTarget: BingeLibraryItem?
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack(alignment: .top) {
             VStack(spacing: 0) {
                 header
                 BingeRule(strong: true)
@@ -184,11 +184,11 @@ struct BingeYouView: View {
                     .foregroundStyle(BingeTheme.ground)
                     .cornerRadius(8)
                     .padding(BingeTheme.gutter)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(.move(edge: .top).combined(with: .opacity))
                     .gesture(
                         DragGesture()
                             .onEnded { gesture in
-                                if gesture.translation.height > 50 {
+                                if gesture.translation.height < -50 {
                                     withAnimation {
                                         notificationManager.dismiss()
                                     }
