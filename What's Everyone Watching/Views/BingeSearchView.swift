@@ -230,10 +230,16 @@ final class BingeSearchEngine: ObservableObject {
 
                     // Mark all episodes as watched
                     if let tmdbShow = try? await TMDBService.shared.getTVShow(id: result.tmdbId) {
+                        let watchedAt = ISO8601DateFormatter().string(from: Date())
                         for season in 1...tmdbShow.numberOfSeasons {
                             if let tmdbSeason = try? await TMDBService.shared.getTVSeason(showId: result.tmdbId, seasonNumber: season) {
                                 for episode in tmdbSeason.episodes {
-                                    try? await supabase.updateEpisodeWatched(episodeId: episode.id, watched: true)
+                                    let ep = Episode(id: episode.id, showId: result.tmdbId, tmdbId: episode.id,
+                                                   seasonNumber: season, episodeNumber: episode.episodeNumber,
+                                                   name: episode.name, overview: episode.overview ?? "",
+                                                   airDate: episode.airDate, userId: userId,
+                                                   watched: true, watchedAt: watchedAt, showTitle: result.title)
+                                    try? await supabase.insertEpisode(episode: ep)
                                 }
                             }
                         }
