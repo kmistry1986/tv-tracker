@@ -167,6 +167,7 @@ struct BingeYouView: View {
             }
         }
         .task { await engine.load() }
+        .onAppear { Task { await engine.load() } }
     }
 
     // MARK: Profile row
