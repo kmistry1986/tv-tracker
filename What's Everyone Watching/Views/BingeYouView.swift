@@ -294,7 +294,17 @@ struct BingeYouView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.show.title).bingeHeadline(16).lineLimit(1)
                 Text(item.subtitle).bingeBody(12).foregroundStyle(BingeTheme.inkMuted).lineLimit(1)
-                if item.totalEpisodes > 0 && item.watchedEpisodes > 0 {
+                if item.isFinished && item.rating != nil {
+                    HStack(spacing: 2) {
+                        ForEach(1...5, id: \.self) { star in
+                            Image(systemName: star <= (item.rating ?? 0) ? "star.fill" : "star")
+                                .font(.system(size: 14))
+                                .foregroundStyle(star <= (item.rating ?? 0) ? BingeTheme.accent : BingeTheme.hairline)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .frame(height: 18)
+                } else if item.totalEpisodes > 0 && item.watchedEpisodes > 0 {
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
                             Rectangle().fill(BingeTheme.hairline)
