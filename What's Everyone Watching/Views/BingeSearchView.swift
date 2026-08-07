@@ -296,6 +296,14 @@ final class BingeSearchEngine: ObservableObject {
         result.isMovie ? libraryMovies.contains(result.tmdbId) : libraryShows.contains(result.tmdbId)
     }
 
+    func isFullyWatched(_ result: BingeSearchResult) -> Bool {
+        !result.isMovie && finishedShows.contains(result.tmdbId)
+    }
+
+    func isPartiallyWatched(_ result: BingeSearchResult) -> Bool {
+        !result.isMovie && libraryShows.contains(result.tmdbId) && !finishedShows.contains(result.tmdbId)
+    }
+
     func isOnWatchlist(_ result: BingeSearchResult) -> Bool {
         if saved.contains(result.id) { return true }
         return result.isMovie ? watchlistMovies.contains(result.tmdbId) : watchlistShows.contains(result.tmdbId)
@@ -462,7 +470,10 @@ struct BingeSearchView: View {
     /// Two mutually exclusive sections. Tap the one you're in to leave it.
     private func actions(_ result: BingeSearchResult) -> some View {
         let onList = engine.isOnWatchlist(result)
+        let isPartial = engine.isPartiallyWatched(result)
+        let isFull = engine.isFullyWatched(result)
         let watched = engine.isInLibrary(result)
+        let watchedTitle = isPartial ? "Partially Watched" : "Watched"
         return VStack(spacing: 6) {
             Button {
                 Task { await engine.toggleWatchlist(result) }
@@ -474,7 +485,7 @@ struct BingeSearchView: View {
             Button {
                 Task { await engine.toggleWatched(result) }
             } label: {
-                rowAction(title: "Watched", active: watched, accent: true)
+                rowAction(title: watchedTitle, active: watched, accent: true)
             }
             .buttonStyle(.plain)
         }
