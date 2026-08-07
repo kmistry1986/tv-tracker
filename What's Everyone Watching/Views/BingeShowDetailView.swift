@@ -34,6 +34,7 @@ struct BingeShowDetailView: View {
     @State private var showSeasonSheet = false
     @State private var showRatingSheet = false
     @State private var confirmFinishShow = false
+    @State private var hasLoaded = false
     @EnvironmentObject private var notificationManager: NotificationManager
     @EnvironmentObject private var youEngine: BingeYouEngine
 
@@ -100,7 +101,12 @@ struct BingeShowDetailView: View {
         .foregroundStyle(BingeTheme.ink)
         .toolbar(.hidden, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
-        .task { await load() }
+        .task {
+            if !hasLoaded {
+                await load()
+                hasLoaded = true
+            }
+        }
         .confirmationDialog("Mark every episode as watched?",
                             isPresented: $confirmFinishShow, titleVisibility: .visible) {
             Button("Finish the show") { Task { await finishShow(thenRate: false) } }
