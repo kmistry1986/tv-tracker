@@ -275,6 +275,20 @@ final class TonightEngine: ObservableObject {
                 let result = trendingMovies[movieIndex]
                 movieIndex += 1
                 guard let id = result.id, !seen.contains(id) && !picks.contains(where: { $0.show.id == id }) else { continue }
+
+                // Skip movies that are too recent (likely in theatres)
+                var skipMovie = false
+                if let movie = try? await TMDBService.shared.getMovie(id: id),
+                   let releaseDate = movie.releaseDate {
+                    if let date = ISO8601DateFormatter().date(from: releaseDate) {
+                        let daysOld = Calendar.current.dateComponents([.day], from: date, to: Date()).day ?? 0
+                        if daysOld < 90 { // Skip movies released in the last 90 days
+                            skipMovie = true
+                        }
+                    }
+                }
+                guard !skipMovie else { continue }
+
                 let show = makeShow(from: result)
                 picks.append(TonightPick(show: show, friendsFinished: [],
                                          averageFriendRating: nil,
