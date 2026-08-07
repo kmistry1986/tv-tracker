@@ -40,6 +40,7 @@ final class BingeSearchEngine: ObservableObject {
     @Published private(set) var platforms: [String: String] = [:]   // row id -> provider
     @Published private(set) var saved: Set<String> = []
     @Published private(set) var requested: Set<String> = []
+    @Published var ratingTarget: BingeSearchResult?
 
     private var watchlistShows: Set<Int> = []
     private var watchlistMovies: Set<Int> = []
@@ -244,6 +245,7 @@ final class BingeSearchEngine: ObservableObject {
                             }
                         }
                     }
+                    ratingTarget = result
                 }
             }
             objectWillChange.send()
@@ -363,6 +365,14 @@ struct BingeSearchView: View {
         .task {
             await engine.primeContext()
             fieldFocused = true
+        }
+        .sheet(item: $engine.ratingTarget) { result in
+            BingeRatingSheet(title: result.title,
+                           posterUrl: result.posterUrl,
+                           itemId: result.tmdbId,
+                           isMovie: result.isMovie) { _, _ in
+                engine.ratingTarget = nil
+            }
         }
     }
 
