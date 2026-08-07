@@ -372,9 +372,9 @@ struct BingeSourceBand: View {
     let kicker: String
     let statement: String
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(kicker).bingeLabel(11).foregroundStyle(.white.opacity(0.85))
-            Text(statement).bingeHeadline(22).fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(kicker).bingeLabel(9).foregroundStyle(.white.opacity(0.85))
+            Text(statement).bingeHeadline(11).fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(BingeTheme.gutter)
