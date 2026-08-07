@@ -485,7 +485,7 @@ struct BingeSearchView: View {
             Button {
                 Task { await engine.toggleWatched(result) }
             } label: {
-                rowAction(title: watchedTitle, active: watched, accent: true)
+                rowAction(title: watchedTitle, active: isPartial || isFull, accent: true)
             }
             .buttonStyle(.plain)
         }
