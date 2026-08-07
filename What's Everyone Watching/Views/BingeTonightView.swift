@@ -504,7 +504,7 @@ struct BingeTonightView: View {
             VStack(spacing: 9) {
                 if let visiblePick = engine.visiblePick {
                     NavigationLink {
-                        BingeShowDetailView(tmdbId: visiblePick.show.tmdbId,
+                        BingeDetailView(tmdbId: visiblePick.show.tmdbId,
                                             dbShowId: visiblePick.show.id,
                                             title: visiblePick.show.title)
                     } label: {

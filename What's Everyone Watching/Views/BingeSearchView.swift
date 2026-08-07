@@ -425,7 +425,7 @@ struct BingeSearchView: View {
     private func resultRow(_ result: BingeSearchResult) -> some View {
         HStack(alignment: .top, spacing: 12) {
             NavigationLink {
-                BingeShowDetailView(tmdbId: result.tmdbId,
+                BingeDetailView(tmdbId: result.tmdbId,
                                     dbShowId: result.tmdbId,
                                     title: result.title)
             } label: {

@@ -1,18 +1,18 @@
-//  BingeShowDetailView.swift
-//  The show screen: what it is, how far you are, and every episode you can
+//  BingeDetailView.swift
+//  Unified show detail view: what it is, how far you are, and every episode you can
 //  tick off — plus "finish the show" and "finish whole seasons" in one place.
 //
-//  Replaces ShowDetailView for anything opened from a Binge screen. Same data
-//  paths as the original (TMDB for details/episodes, Supabase for watched
+//  Used from all Binge screens (Tonight, You, Search, Friends, Home, Library).
+//  Same data paths as the original (TMDB for details/episodes, Supabase for watched
 //  state), restyled to the system and with the 1–5 rating sheet attached.
 //
-//  `tmdbId` drives TMDB and the episodes table (as the original did).
+//  `tmdbId` drives TMDB and the episodes table.
 //  `dbShowId` is the tv_shows row id — the one user_shows.show_id points at,
 //  so ratings PATCH the right row. Pass it when the caller knows it.
 
 import SwiftUI
 
-struct BingeShowDetailView: View {
+struct BingeDetailView: View {
     let tmdbId: Int
     var dbShowId: Int? = nil
     let title: String
@@ -349,7 +349,7 @@ struct BingeShowDetailView: View {
             review = mine?.review
             isInLibrary = mine != nil
         } catch {
-            print("BingeShowDetailView load failed: \(error)")
+            print("BingeDetailView load failed: \(error)")
         }
         isLoading = false
     }
