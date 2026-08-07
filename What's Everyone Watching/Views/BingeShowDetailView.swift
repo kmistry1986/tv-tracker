@@ -2,7 +2,7 @@
 //  Unified show detail view: what it is, how far you are, and every episode you can
 //  tick off — plus "finish the show" and "finish whole seasons" in one place.
 //
-//  Used from all Binge screens (Tonight, You, Search, Friends).
+//  Used from all Binge screens (Tonight, You, Search, Friends, Home, Library).
 //  Same data paths as the original (TMDB for details/episodes, Supabase for watched
 //  state), restyled to the system and with the 1–5 rating sheet attached.
 //
@@ -46,6 +46,7 @@ struct BingeShowDetailView: View {
         totalCount == 0 ? 0 : min(1, Double(watchedCount) / Double(totalCount))
     }
     private var seasonEpisodes: [EpisodeDetail] { episodesBySeason[selectedSeason] ?? [] }
+    private var showTitleForWrite: String? { details?.name ?? title }
     private var seasonDone: Bool {
         !seasonEpisodes.isEmpty && seasonEpisodes.allSatisfy { watched.contains($0.id) }
     }
@@ -66,10 +67,8 @@ struct BingeShowDetailView: View {
                         BingeRule(strong: true)
                         progressBlock
                         BingeRule(strong: true)
-                        if isInLibrary {
-                            actions
-                            BingeRule(strong: true)
-                        }
+                        actions
+                        BingeRule(strong: true)
                         if let overview = details?.overview, !overview.isEmpty {
                             about(overview)
                             BingeRule(strong: true)
@@ -215,7 +214,7 @@ struct BingeShowDetailView: View {
             .disabled(isWorking)
 
             Button { showSeasonSheet = true } label: {
-                Text("By season").bingeLabel(12)
+                Text("Pick seasons").bingeLabel(12)
                     .padding(.horizontal, 14)
                     .frame(maxWidth: .infinity, minHeight: BingeTheme.minTap, alignment: .leading)
                     .overlay(Rectangle().stroke(BingeTheme.ink, lineWidth: 1))
@@ -247,36 +246,63 @@ struct BingeShowDetailView: View {
     // MARK: Seasons and episodes
 
     private var seasonStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                ForEach(seasons, id: \.self) { s in
-                    Button { selectedSeason = s } label: {
-                        Text("S\(s)").bingeLabel(11)
-                            .frame(minWidth: 54, minHeight: 44)
-                            .foregroundStyle(selectedSeason == s ? BingeTheme.ground : BingeTheme.inkMuted)
-                            .background(selectedSeason == s ? BingeTheme.ink : BingeTheme.ground)
-                            .overlay(alignment: .trailing) { BingeVRule() }
-                            .contentShape(Rectangle())
+        HStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    ForEach(seasons, id: \.self) { s in
+                        Button { selectedSeason = s } label: {
+                            Text("S\(s)").bingeLabel(11)
+                                .frame(minWidth: 54, minHeight: 44)
+                                .foregroundStyle(selectedSeason == s ? BingeTheme.ground : BingeTheme.inkMuted)
+                                .background(selectedSeason == s ? BingeTheme.ink : BingeTheme.ground)
+                                .overlay(alignment: .trailing) { BingeVRule() }
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        // Mark a season without leaving the one you're on.
+                        .contextMenu {
+                            Button(seasonComplete(s) ? "Unmark season \(s)" : "Mark season \(s) watched") {
+                                Task { await setSeason(s, watched: !seasonComplete(s)) }
+                            }
+                        }
                     }
-                    .buttonStyle(.plain)
                 }
+            }
+            if !seasonEpisodes.isEmpty {
+                Button { Task { await setSeason(selectedSeason, watched: !seasonDone) } } label: {
+                    Text(seasonDone ? "Unmark\nS\(selectedSeason)" : "Mark S\(selectedSeason)\nWatched")
+                        .bingeLabel(10)
+                        .multilineTextAlignment(.leading)
+                        .lineSpacing(1)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .frame(minHeight: 44)
+                        .foregroundStyle(seasonDone ? BingeTheme.inkMuted : .white)
+                        .background(seasonDone ? BingeTheme.ground : BingeTheme.accent)
+                        .overlay(alignment: .leading) { BingeVRule() }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(isWorking)
             }
         }
         .background(BingeTheme.ground)
     }
 
+    private func seasonComplete(_ s: Int) -> Bool {
+        let eps = episodesBySeason[s] ?? []
+        return !eps.isEmpty && eps.allSatisfy { watched.contains($0.id) }
+    }
+
     private var seasonHeader: some View {
-        HStack(alignment: .firstTextBaseline) {
+        let done = seasonEpisodes.filter { watched.contains($0.id) }.count
+        return HStack(alignment: .firstTextBaseline) {
             Text("Season \(selectedSeason) · \(seasonEpisodes.count) episodes")
                 .bingeLabel(11).foregroundStyle(BingeTheme.inkMuted)
-            Spacer()
-            if isInLibrary && !seasonEpisodes.isEmpty {
-                Button { Task { await setSeason(selectedSeason, watched: !seasonDone) } } label: {
-                    Text(seasonDone ? "Unmark season" : "Mark season")
-                        .bingeLabel(11).foregroundStyle(BingeTheme.accent)
-                        .padding(.vertical, 8).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+            Spacer(minLength: 12)
+            if !seasonEpisodes.isEmpty {
+                Text("\(done) watched")
+                    .bingeLabel(11)
+                    .foregroundStyle(done == seasonEpisodes.count ? BingeTheme.accent : BingeTheme.inkFaint)
             }
         }
         .padding(.horizontal, BingeTheme.gutter).padding(.top, 14).padding(.bottom, 10)
@@ -425,6 +451,7 @@ struct BingeShowDetailView: View {
         guard let userId = supabase.currentUser?.id else { isWorking = false; return }
 
         let episodes = episodesBySeason[season] ?? []
+        let wasEmpty = watched.isEmpty
 
         // Update UI first
         for ep in episodes {
@@ -446,7 +473,32 @@ struct BingeShowDetailView: View {
             }
         }
 
+        // Marking a season is how a show ENTERS your library — same transition
+        // toggle() does for a single episode.
+        await syncLibraryMembership(wasEmpty: wasEmpty, userId: userId)
+
         isWorking = false
+    }
+
+    /// One place that decides whether this show belongs in Started or Saved,
+    /// based on whether anything is ticked. Safe to call after any bulk change.
+    private func syncLibraryMembership(wasEmpty: Bool, userId: String) async {
+        let hasWatched = !watched.isEmpty
+
+        if hasWatched && wasEmpty {
+            async let move = supabase.moveWatchlistToLibrary(userId: userId, showId: dbShowId ?? tmdbId)
+            async let remove = supabase.removeShowFromWatchlist(userId: userId, showId: dbShowId ?? tmdbId)
+            _ = try? await (move, remove)
+            isInLibrary = true
+            notificationManager.show("Moved to Started")
+            youEngine.library.removeAll { $0.show.id == (dbShowId ?? tmdbId) }
+        } else if !hasWatched && !wasEmpty {
+            try? await supabase.removeFromLibraryIfNoWatchedEpisodes(userId: userId, showId: dbShowId ?? tmdbId)
+            try? await supabase.restoreToWatchlist(userId: userId, showId: dbShowId ?? tmdbId)
+            isInLibrary = false
+            notificationManager.show("Moved to Saved")
+            youEngine.library.removeAll { $0.show.id == (dbShowId ?? tmdbId) }
+        }
     }
 
     private func finishShow(thenRate: Bool) async {
@@ -509,14 +561,44 @@ struct BingeShowDetailView: View {
 
     private func applySeasons(on: [Int], off: [Int]) async {
         showSeasonSheet = false
-        for s in on { await setSeason(s, watched: true) }
-        for s in off { await setSeason(s, watched: false) }
-
         guard let userId = supabase.currentUser?.id else { return }
+
+        let wasEmpty = watched.isEmpty
+        isWorking = true
+
+        for s in on { await writeSeason(s, watched: true, userId: userId) }
+        for s in off { await writeSeason(s, watched: false, userId: userId) }
+
         let rows = (try? await supabase.fetchEpisodes(showId: tmdbId, userId: userId)) ?? []
         watched = Set(rows.filter { $0.watched }.map { $0.id })
 
-        if rating == nil && !on.isEmpty { showRatingSheet = true }
+        // One transition for the whole batch — not one per season.
+        await syncLibraryMembership(wasEmpty: wasEmpty, userId: userId)
+        isWorking = false
+
+        if rating == nil && !on.isEmpty && fraction == 1.0 { showRatingSheet = true }
+    }
+
+    /// Episode writes only. The library transition is the caller's job.
+    private func writeSeason(_ season: Int, watched on: Bool, userId: String) async {
+        let episodes = episodesBySeason[season] ?? []
+        for ep in episodes {
+            if on { watched.insert(ep.id) } else { watched.remove(ep.id) }
+        }
+        let showTitle = showTitleForWrite
+        await withTaskGroup(of: Void.self) { group in
+            for ep in episodes {
+                group.addTask {
+                    let episode = Episode(id: ep.id, showId: tmdbId, tmdbId: ep.id,
+                                        seasonNumber: season, episodeNumber: ep.episodeNumber,
+                                        name: ep.name, overview: ep.overview ?? "",
+                                        airDate: ep.airDate, userId: userId,
+                                        watched: on, watchedAt: on ? ISO8601DateFormatter().string(from: Date()) : nil,
+                                        showTitle: showTitle)
+                    try? await supabase.insertEpisode(episode: episode)
+                }
+            }
+        }
     }
 }
 
