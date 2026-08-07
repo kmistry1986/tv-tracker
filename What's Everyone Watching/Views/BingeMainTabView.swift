@@ -12,6 +12,7 @@ struct BingeMainTabView: View {
     @StateObject private var supabase = SupabaseService.shared
     @StateObject private var searchEngine = BingeSearchEngine()
     @StateObject private var youEngine = BingeYouEngine()
+    @StateObject private var notificationManager = NotificationManager()
     @State private var tab: BingeTab = .tonight
     /// Carried WITH the presentation. A plain @State array read by a
     /// .sheet(isPresented:) closure can be captured while it's still empty,
@@ -32,6 +33,7 @@ struct BingeMainTabView: View {
             }
         }
         .environmentObject(supabase)
+        .environmentObject(notificationManager)
         .tint(BingeTheme.accent)
         .sheet(item: $ratingPrompt) { payload in
             DailyRatingPrompt(items: payload.items) {

@@ -132,6 +132,7 @@ final class BingeYouEngine: ObservableObject {
 
 struct BingeYouView: View {
     @EnvironmentObject private var supabase: SupabaseService
+    @EnvironmentObject private var notificationManager: NotificationManager
     @ObservedObject var engine: BingeYouEngine
     @Binding var tab: BingeTab
     @State private var section = 0
@@ -140,35 +141,53 @@ struct BingeYouView: View {
     @State private var ratingTarget: BingeLibraryItem?
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            BingeRule(strong: true)
+        ZStack(alignment: .bottom) {
+            VStack(spacing: 0) {
+                header
+                BingeRule(strong: true)
 
-            statSwitch
-            BingeRule(strong: true)
+                statSwitch
+                BingeRule(strong: true)
 
-            list
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(BingeTheme.ground)
-        .foregroundStyle(BingeTheme.ink)
-        .toolbar(.hidden, for: .navigationBar)
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .safeAreaInset(edge: .bottom, spacing: 0) { BingeTabBar(selection: $tab) }
-        .sheet(isPresented: $showSettings) { BingeSettingsView() }
-        .sheet(isPresented: $showImport) { ImportManagementView() }
-        .sheet(item: $ratingTarget) { item in
-            BingeRatingSheet(title: item.show.title,
-                             posterUrl: item.show.posterUrl,
-                             itemId: item.show.id,
-                             isMovie: false,
-                             existingRating: item.rating) { _, _ in
-                Task { await engine.load() }
+                list
             }
-        }
-        .task { await engine.load() }
-        .onChange(of: tab) { oldTab, newTab in
-            if newTab == .you { Task { await engine.load() } }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(BingeTheme.ground)
+            .foregroundStyle(BingeTheme.ink)
+            .toolbar(.hidden, for: .navigationBar)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .bottom, spacing: 0) { BingeTabBar(selection: $tab) }
+            .sheet(isPresented: $showSettings) { BingeSettingsView() }
+            .sheet(isPresented: $showImport) { ImportManagementView() }
+            .sheet(item: $ratingTarget) { item in
+                BingeRatingSheet(title: item.show.title,
+                                 posterUrl: item.show.posterUrl,
+                                 itemId: item.show.id,
+                                 isMovie: false,
+                                 existingRating: item.rating) { _, _ in
+                    Task { await engine.load() }
+                }
+            }
+            .task { await engine.load() }
+            .onChange(of: tab) { oldTab, newTab in
+                if newTab == .you { Task { await engine.load() } }
+            }
+
+            if let message = notificationManager.message {
+                VStack {
+                    HStack {
+                        Text(message).bingeHeadline(14)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                    .padding(.vertical, 12).padding(.horizontal, BingeTheme.gutter)
+                    .background(BingeTheme.ink)
+                    .foregroundStyle(BingeTheme.ground)
+                    .cornerRadius(8)
+                    .padding(BingeTheme.gutter)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
         }
     }
 
