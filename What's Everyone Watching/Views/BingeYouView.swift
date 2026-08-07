@@ -167,6 +167,9 @@ struct BingeYouView: View {
             }
         }
         .task { await engine.load() }
+        .onChange(of: tab) { oldTab, newTab in
+            if newTab == .you { Task { await engine.load() } }
+        }
     }
 
     // MARK: Profile row
