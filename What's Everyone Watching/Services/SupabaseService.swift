@@ -1047,9 +1047,13 @@ class SupabaseService: NSObject, ObservableObject {
         if !authToken.isEmpty {
             request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
         }
-        
-        let (_, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 204 else {
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+
+        guard statusCode == 204 || statusCode == 200 else {
+            let responseStr = String(data: data, encoding: .utf8) ?? ""
+            print("⚠️ Delete failed: status=\(statusCode), response=\(responseStr)")
             throw NSError(domain: "API", code: -1, userInfo: [NSLocalizedDescriptionKey: "Delete failed"])
         }
     }
