@@ -400,6 +400,9 @@ struct BingeShowDetailView: View {
             isInLibrary = true
         }
 
+        let rows = (try? await supabase.fetchEpisodes(showId: tmdbId, userId: userId)) ?? []
+        watched = Set(rows.filter { $0.watched }.map { $0.id })
+
         isWorking = false
         if thenRate || rating == nil { showRatingSheet = true }
     }
@@ -408,6 +411,11 @@ struct BingeShowDetailView: View {
         showSeasonSheet = false
         for s in on { await setSeason(s, watched: true) }
         for s in off { await setSeason(s, watched: false) }
+
+        guard let userId = supabase.currentUser?.id else { return }
+        let rows = (try? await supabase.fetchEpisodes(showId: tmdbId, userId: userId)) ?? []
+        watched = Set(rows.filter { $0.watched }.map { $0.id })
+
         if rating == nil && !on.isEmpty { showRatingSheet = true }
     }
 }
