@@ -49,7 +49,7 @@ final class BingeSearchEngine: ObservableObject {
     private var libraryShows: Set<Int> = []
     private var libraryMovies: Set<Int> = []
     private var finishedShows: Set<Int> = []
-    private var showEpisodeCounts: [Int: (watched: Int, total: Int)] = [:]
+    @Published private(set) var showEpisodeCounts: [Int: (watched: Int, total: Int)] = [:]
     private let supabase = SupabaseService.shared
     private var searchTask: Task<Void, Never>?
 
