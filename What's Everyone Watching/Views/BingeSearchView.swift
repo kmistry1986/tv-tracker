@@ -399,6 +399,9 @@ struct BingeSearchView: View {
                 .padding(.horizontal, BingeTheme.gutter)
                 .frame(height: 52)
                 .onChange(of: engine.query) { _, _ in engine.queryChanged() }
+                .onSubmit {
+                    fieldFocused = false
+                }
             BingeRule()
 
             BingeSegmented(options: ["All", "Shows", "Movies", "People"], selection: Binding(get: { engine.scope }, set: { engine.scope = $0 }))
