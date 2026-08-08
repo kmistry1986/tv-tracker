@@ -263,7 +263,7 @@ struct ShowDetailView: View {
 
                 // Load watched episodes from database
                 let episodes = try await supabase.fetchEpisodes(showId: showId, userId: userId)
-                watchedEpisodes = Set(episodes.filter { $0.watched }.map { $0.id })
+                watchedEpisodes = Set(episodes.filter { $0.watched }.compactMap { $0.id })
 
                 // Load rating from user_shows and check if in library
                 let userShows = try await supabase.fetchUserShows(userId: userId)

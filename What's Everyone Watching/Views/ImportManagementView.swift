@@ -482,7 +482,7 @@ struct NetflixImportView: View {
                                         }
 
                                         let tmdbEpisode = Episode(
-                                            id: episodeDetail.id,
+                                            id: nil,
                                             showId: firstResult.id,
                                             tmdbId: episodeDetail.id,
                                             seasonNumber: episodeDetail.seasonNumber,

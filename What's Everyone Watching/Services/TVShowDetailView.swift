@@ -404,7 +404,7 @@ struct TVShowDetailView: View {
                         let seasonDetail = try await tmdb.getTVSeason(showId: showId, seasonNumber: seasonNum)
                         for episode in seasonDetail.episodes {
                             let episodeRecord = Episode(
-                                id: episode.id,
+                                id: nil,
                                 showId: showId,
                                 tmdbId: episode.id,
                                 seasonNumber: episode.seasonNumber,

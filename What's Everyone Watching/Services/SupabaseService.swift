@@ -128,26 +128,32 @@ class SupabaseService: NSObject, ObservableObject {
     
     func signIn(email: String, password: String) async throws -> User {
         let endpoint = "\(supabaseURL)/auth/v1/token?grant_type=password"
-        
+
         var request = URLRequest(url: URL(string: endpoint)!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
-        
+
         struct SignInBody: Encodable {
             let email: String
             let password: String
         }
-        
+
         let body = SignInBody(email: email, password: password)
         request.httpBody = try JSONEncoder().encode(body)
-        
+
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-            throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Sign in failed"])
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+        let responseBody = String(data: data, encoding: .utf8) ?? "no data"
+
+        print("🔐 SignIn Response Status: \(statusCode)")
+        print("🔐 SignIn Response Body: \(responseBody)")
+
+        guard statusCode == 200 else {
+            let errorMsg = "Sign in failed (HTTP \(statusCode)): \(responseBody)"
+            print("🔐 SignIn Error: \(errorMsg)")
+            throw NSError(domain: "Auth", code: statusCode, userInfo: [NSLocalizedDescriptionKey: errorMsg])
         }
-        
-        print("SignIn Response: \(String(data: data, encoding: .utf8) ?? "no data")")
         
         struct TokenResponse: Decodable {
             let user: UserResponse?
@@ -308,6 +314,9 @@ class SupabaseService: NSObject, ObservableObject {
         }
 
         request.httpBody = try JSONEncoder().encode(episode)
+        if let bodyStr = String(data: request.httpBody ?? Data(), encoding: .utf8) {
+            print("   Payload: \(bodyStr)")
+        }
 
         let (data, response) = try await URLSession.shared.data(for: request)
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -321,10 +330,17 @@ class SupabaseService: NSObject, ObservableObject {
         if statusCode == 201 {
             return
         } else if statusCode == 409 {
-            // Episode already exists - update it to mark as watched
+            // Episode already exists - update it by composite key
             if episode.watched {
-                print("⚠️ Duplicate episode - updating watched status")
-                try await updateEpisodeWatchedById(episodeId: episode.id, watched: true, watchedAt: episode.watchedAt)
+                print("⚠️ Duplicate episode - updating watched status by composite key")
+                try await updateEpisodeWatchedByCompositeKey(
+                    showId: episode.showId,
+                    seasonNumber: episode.seasonNumber,
+                    episodeNumber: episode.episodeNumber,
+                    userId: episode.userId ?? "",
+                    watched: true,
+                    watchedAt: episode.watchedAt
+                )
             } else {
                 print("⚠️ Duplicate episode - skipping")
             }
@@ -335,6 +351,53 @@ class SupabaseService: NSObject, ObservableObject {
         } else {
             throw NSError(domain: "API", code: -1, userInfo: [NSLocalizedDescriptionKey: "Episode insert failed with status \(statusCode): \(responseBody)"])
         }
+    }
+
+    func updateEpisodeWatchedByCompositeKey(
+        showId: Int,
+        seasonNumber: Int,
+        episodeNumber: Int,
+        userId: String,
+        watched: Bool,
+        watchedAt: String?
+    ) async throws {
+        let endpoint = "\(supabaseURL)/rest/v1/episodes?show_id=eq.\(showId)&season_number=eq.\(seasonNumber)&episode_number=eq.\(episodeNumber)&user_id=eq.\(userId)"
+        print("🔄 Updating episode by composite key: show_id=\(showId), season=\(seasonNumber), episode=\(episodeNumber), user_id=\(userId)")
+        var request = URLRequest(url: URL(string: endpoint)!)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        if !authToken.isEmpty {
+            request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
+
+        struct UpdateBody: Encodable {
+            let watched: Bool
+            let watched_at: String?
+        }
+
+        let body = UpdateBody(watched: watched, watched_at: watchedAt)
+        request.httpBody = try JSONEncoder().encode(body)
+        if let bodyStr = String(data: request.httpBody ?? Data(), encoding: .utf8) {
+            print("   Update payload: \(bodyStr)")
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let responseStr = String(data: data, encoding: .utf8) ?? ""
+
+        if statusCode == 204 || statusCode == 200 {
+            print("✅ Updated episode S\(seasonNumber)E\(episodeNumber) by composite key - status=\(statusCode)")
+            if !responseStr.isEmpty {
+                print("   Response: \(responseStr)")
+            }
+            return
+        }
+
+        print("⚠️ updateEpisodeWatchedByCompositeKey FAILED!")
+        print("   show_id=\(showId), season=\(seasonNumber), episode=\(episodeNumber), user_id=\(userId)")
+        print("   watched=\(watched), status=\(statusCode)")
+        print("   response=\(responseStr)")
     }
 
     private func updateEpisodeWatchedById(episodeId: Int, watched: Bool, watchedAt: String?) async throws {

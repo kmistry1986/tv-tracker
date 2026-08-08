@@ -1016,10 +1016,12 @@ struct LibraryView: View {
 
                 // Mark all unwatched episodes as watched
                 for episode in showEpisodes {
-                    try await supabase.updateEpisodeWatched(
-                        episodeId: episode.id,
-                        watched: true
-                    )
+                    if let episodeId = episode.id {
+                        try await supabase.updateEpisodeWatched(
+                            episodeId: episodeId,
+                            watched: true
+                        )
+                    }
                 }
 
                 // Reload library

@@ -309,6 +309,7 @@ final class BingeSearchEngine: ObservableObject {
         guard let userId = supabase.currentUser?.id else { return }
 
         do {
+            print("🎬 Toggle: \(result.title), isWatchlist: \(isWatchlist)")
             if isWatchlist {
                 if isOnWatchlist(result) {
                     try await removeFromWatchlist(result, userId: userId)
@@ -326,9 +327,20 @@ final class BingeSearchEngine: ObservableObject {
                     }
                 }
             } else {
+                // Mark as watched — only proceed if not already fully watched
+                let episodeCounts = showEpisodeCounts[result.tmdbId]
+                let isFull = episodeCounts != nil && episodeCounts!.watched == episodeCounts!.total && episodeCounts!.total > 0
+                print("🎯 Mark watched: \(result.title), isFull=\(isFull), isInLibrary=\(isInLibrary(result))")
+                if isFull {
+                    // Already fully watched, don't do anything
+                    print("🎯 Already fully watched, skipping")
+                    return
+                }
                 if isInLibrary(result) {
+                    print("🎯 In library, removing")
                     try await removeFromLibrary(result, userId: userId)
                 } else {
+                    print("🎯 Not in library, adding")
                     if isOnWatchlist(result) { try await removeFromWatchlist(result, userId: userId) }
 
                     if result.isMovie {
@@ -350,32 +362,50 @@ final class BingeSearchEngine: ObservableObject {
                             try? await supabase.insertShow(show: show)
                         }
 
-                        libraryShows.insert(result.tmdbId)
-                        objectWillChange.send()
+                        let today = ISO8601DateFormatter().string(from: Date())
+                        do {
+                            try await supabase.insertUserShow(userId: userId, showId: result.tmdbId, watchedDate: today)
+                            print("✅ insertUserShow succeeded for \(result.title)")
+                        } catch {
+                            print("❌ insertUserShow failed: \(error)")
+                        }
 
+                        libraryShows.insert(result.tmdbId)
+
+                        // Insert all episodes first (wait for it), then refresh UI
                         if let tmdbShow = try? await TMDBService.shared.getTVShow(id: result.tmdbId) {
                             let watchedAt = ISO8601DateFormatter().string(from: Date())
+                            print("📺 Inserting episodes for show \(result.tmdbId) with userId=\(userId)")
                             for season in 1...tmdbShow.numberOfSeasons {
                                 if let tmdbSeason = try? await TMDBService.shared.getTVSeason(showId: result.tmdbId, seasonNumber: season) {
                                     for episode in tmdbSeason.episodes {
-                                        let ep = Episode(id: episode.id, showId: result.tmdbId, tmdbId: episode.id,
+                                        let ep = Episode(id: nil, showId: result.tmdbId, tmdbId: episode.id,
                                                        seasonNumber: season, episodeNumber: episode.episodeNumber,
                                                        name: episode.name, overview: episode.overview ?? "",
                                                        airDate: episode.airDate, userId: userId,
                                                        watched: true, watchedAt: watchedAt, showTitle: result.title)
-                                        try? await supabase.insertEpisode(episode: ep)
+                                        do {
+                                            try await supabase.insertEpisode(episode: ep)
+                                        } catch {
+                                            print("❌ insertEpisode failed for S\(season)E\(episode.episodeNumber): \(error)")
+                                        }
                                     }
                                 }
                             }
-
-                            ratingTarget = result
                         }
+
+                        await refreshLibraryState()
+                        objectWillChange.send()
+                        ratingTarget = result
                         return
                     }
                 }
             }
+            await refreshLibraryState()
             objectWillChange.send()
+            print("✓ Toggle successful")
         } catch {
+            print("✗ Toggle error: \(error)")
             errorMessage = isWatchlist ? "Couldn't update your watchlist." : "Couldn't update what you've watched."
         }
     }

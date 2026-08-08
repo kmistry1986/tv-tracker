@@ -25,7 +25,7 @@ struct BingeShowDetailView: View {
     @State private var seasons: [Int] = []
     @State private var selectedSeason = 1
     @State private var episodesBySeason: [Int: [EpisodeDetail]] = [:]
-    @State private var watched: Set<Int> = []
+    @State private var watchedTmdbIds: Set<Int> = []
     @State private var rating: Int?
     @State private var review: String?
     @State private var isInLibrary = false
@@ -42,14 +42,14 @@ struct BingeShowDetailView: View {
 
     private var allEpisodes: [EpisodeDetail] { episodesBySeason.values.flatMap { $0 } }
     private var totalCount: Int { max(allEpisodes.count, details?.numberOfEpisodes ?? 0) }
-    private var watchedCount: Int { watched.count }
+    private var watchedCount: Int { watchedTmdbIds.count }
     private var fraction: Double {
         totalCount == 0 ? 0 : min(1, Double(watchedCount) / Double(totalCount))
     }
     private var seasonEpisodes: [EpisodeDetail] { episodesBySeason[selectedSeason] ?? [] }
     private var showTitleForWrite: String? { details?.name ?? title }
     private var seasonDone: Bool {
-        !seasonEpisodes.isEmpty && seasonEpisodes.allSatisfy { watched.contains($0.id) }
+        !seasonEpisodes.isEmpty && seasonEpisodes.allSatisfy { watchedTmdbIds.contains($0.id) }
     }
 
     var body: some View {
@@ -102,15 +102,13 @@ struct BingeShowDetailView: View {
         .toolbar(.hidden, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
         .task {
-            if !hasLoaded {
-                await load()
-                hasLoaded = true
-            }
+            await load()
+            hasLoaded = true
         }
         .sheet(isPresented: $showSeasonSheet) {
             BingeSeasonSheet(seasons: seasons,
                              episodesBySeason: episodesBySeason,
-                             watched: watched) { on, off in
+                             watched: watchedTmdbIds) { on, off in
                 Task { await applySeasons(on: on, off: off) }
             }
         }
@@ -303,11 +301,11 @@ struct BingeShowDetailView: View {
 
     private func seasonComplete(_ s: Int) -> Bool {
         let eps = episodesBySeason[s] ?? []
-        return !eps.isEmpty && eps.allSatisfy { watched.contains($0.id) }
+        return !eps.isEmpty && eps.allSatisfy { watchedTmdbIds.contains($0.id) }
     }
 
     private var seasonHeader: some View {
-        let done = seasonEpisodes.filter { watched.contains($0.id) }.count
+        let done = seasonEpisodes.filter { watchedTmdbIds.contains($0.id) }.count
         return HStack(alignment: .firstTextBaseline) {
             Text("Season \(selectedSeason) · \(seasonEpisodes.count) episodes")
                 .bingeLabel(11).foregroundStyle(BingeTheme.inkMuted)
@@ -322,7 +320,7 @@ struct BingeShowDetailView: View {
     }
 
     private func episodeRow(_ ep: EpisodeDetail) -> some View {
-        let on = watched.contains(ep.id)
+        let on = watchedTmdbIds.contains(ep.id)
         return Button { Task { await toggle(ep) } } label: {
             HStack(alignment: .top, spacing: 14) {
                 ZStack {
@@ -403,8 +401,19 @@ struct BingeShowDetailView: View {
             // Refresh watch providers from TMDB
             _ = try? await tmdb.getTVWatchProviders(tvId: tmdbId)
 
-            let rows = (try? await supabase.fetchEpisodes(showId: tmdbId, userId: userId)) ?? []
-            watched = Set(rows.filter { $0.watched }.map { $0.id })
+            do {
+                let rows = try await supabase.fetchEpisodes(showId: tmdbId, userId: userId)
+                print("📺 fetchEpisodes returned \(rows.count) rows for show \(tmdbId)")
+                if !rows.isEmpty {
+                    print("   First row: id=\(rows[0].id ?? -1), tmdbId=\(rows[0].tmdbId), watched=\(rows[0].watched)")
+                }
+                let watchedIds = rows.filter { $0.watched }.map { $0.tmdbId }
+                print("📺 Loaded \(rows.count) episodes, \(watchedIds.count) marked watched")
+                print("📺 Watched TMDB IDs: \(watchedIds.prefix(5))")
+                self.watchedTmdbIds = Set(watchedIds)
+            } catch {
+                print("❌ fetchEpisodes failed: \(error)")
+            }
 
             let userShows = (try? await supabase.fetchUserShows(userId: userId)) ?? []
             let mine = userShows.first { $0.showId == (dbShowId ?? tmdbId) }
@@ -418,11 +427,11 @@ struct BingeShowDetailView: View {
     }
 
     private func toggle(_ ep: EpisodeDetail) async {
-        let turningOn = !watched.contains(ep.id)
-        let wasEmpty = watched.isEmpty
+        let turningOn = !watchedTmdbIds.contains(ep.id)
+        let wasEmpty = watchedTmdbIds.isEmpty
         let wasComplete = fraction == 1.0
 
-        if turningOn { watched.insert(ep.id) } else { watched.remove(ep.id) }
+        if turningOn { watchedTmdbIds.insert(ep.id) } else { watchedTmdbIds.remove(ep.id) }
         let isNowComplete = watchedCount == totalCount && totalCount > 0
 
         do {
@@ -443,7 +452,7 @@ struct BingeShowDetailView: View {
             if turningOn && wasEmpty {
                 notificationManager.show("Moved to Started")
                 youEngine.library.removeAll { $0.show.id == (dbShowId ?? tmdbId) }
-            } else if !turningOn && watched.isEmpty {
+            } else if !turningOn && watchedTmdbIds.isEmpty {
                 isInLibrary = false
                 notificationManager.show("Moved to Saved")
                 youEngine.library.removeAll { $0.show.id == (dbShowId ?? tmdbId) }
@@ -454,13 +463,13 @@ struct BingeShowDetailView: View {
                 await searchEngine.refreshLibraryState()
             }
         } catch {
-            if turningOn { watched.remove(ep.id) } else { watched.insert(ep.id) }
+            if turningOn { watchedTmdbIds.remove(ep.id) } else { watchedTmdbIds.insert(ep.id) }
         }
     }
 
     private func updateEpisode(ep: EpisodeDetail, turningOn: Bool, userId: String) async throws {
         if turningOn {
-            let episode = Episode(id: ep.id, showId: tmdbId, tmdbId: ep.id,
+            let episode = Episode(id: nil, showId: tmdbId, tmdbId: ep.id,
                                 seasonNumber: ep.seasonNumber, episodeNumber: ep.episodeNumber,
                                 name: ep.name, overview: ep.overview ?? "",
                                 airDate: ep.airDate, userId: userId,
@@ -468,7 +477,14 @@ struct BingeShowDetailView: View {
                                 showTitle: details?.name)
             try? await supabase.insertEpisode(episode: episode)
         } else {
-            try await supabase.updateEpisodeWatched(episodeId: ep.id, watched: false)
+            try await supabase.updateEpisodeWatchedByCompositeKey(
+                showId: tmdbId,
+                seasonNumber: ep.seasonNumber,
+                episodeNumber: ep.episodeNumber,
+                userId: userId,
+                watched: false,
+                watchedAt: nil
+            )
         }
     }
 
@@ -477,7 +493,7 @@ struct BingeShowDetailView: View {
             async let move = supabase.moveWatchlistToLibrary(userId: userId, showId: dbShowId ?? tmdbId)
             async let remove = supabase.removeShowFromWatchlist(userId: userId, showId: dbShowId ?? tmdbId)
             _ = try await (move, remove)
-        } else if !turningOn && watched.isEmpty {
+        } else if !turningOn && watchedTmdbIds.isEmpty {
             try await supabase.removeFromLibraryIfNoWatchedEpisodes(userId: userId, showId: dbShowId ?? tmdbId)
         }
     }
@@ -487,11 +503,11 @@ struct BingeShowDetailView: View {
         guard let userId = supabase.currentUser?.id else { isWorking = false; return }
 
         let episodes = episodesBySeason[season] ?? []
-        let wasEmpty = watched.isEmpty
+        let wasEmpty = watchedTmdbIds.isEmpty
 
         // Update UI first
         for ep in episodes {
-            if on { watched.insert(ep.id) } else { watched.remove(ep.id) }
+            if on { watchedTmdbIds.insert(ep.id) } else { watchedTmdbIds.remove(ep.id) }
         }
 
         // Then run all insertions/updates concurrently
@@ -499,7 +515,7 @@ struct BingeShowDetailView: View {
             for ep in episodes {
                 group.addTask {
                     if on {
-                        let episode = Episode(id: ep.id, showId: tmdbId, tmdbId: ep.id,
+                        let episode = Episode(id: nil, showId: tmdbId, tmdbId: ep.id,
                                             seasonNumber: season, episodeNumber: ep.episodeNumber,
                                             name: ep.name, overview: ep.overview ?? "",
                                             airDate: ep.airDate, userId: userId,
@@ -523,7 +539,7 @@ struct BingeShowDetailView: View {
     /// One place that decides whether this show belongs in Started or Saved,
     /// based on whether anything is ticked. Safe to call after any bulk change.
     private func syncLibraryMembership(wasEmpty: Bool, userId: String) async {
-        let hasWatched = !watched.isEmpty
+        let hasWatched = !watchedTmdbIds.isEmpty
 
         if hasWatched && wasEmpty {
             // Optimistically update library before database operations complete
@@ -560,12 +576,12 @@ struct BingeShowDetailView: View {
         guard let userId = supabase.currentUser?.id else { return }
         isWorking = true
 
-        let wasEmpty = watched.isEmpty
+        let wasEmpty = watchedTmdbIds.isEmpty
 
         // Mark all episodes as watched optimistically
         for s in seasons {
             for ep in episodesBySeason[s] ?? [] {
-                watched.insert(ep.id)
+                watchedTmdbIds.insert(ep.id)
             }
         }
 
@@ -624,14 +640,14 @@ struct BingeShowDetailView: View {
         showSeasonSheet = false
         guard let userId = supabase.currentUser?.id else { return }
 
-        let wasEmpty = watched.isEmpty
+        let wasEmpty = watchedTmdbIds.isEmpty
         isWorking = true
 
         for s in on { await writeSeason(s, watched: true, userId: userId) }
         for s in off { await writeSeason(s, watched: false, userId: userId) }
 
         let rows = (try? await supabase.fetchEpisodes(showId: tmdbId, userId: userId)) ?? []
-        watched = Set(rows.filter { $0.watched }.map { $0.id })
+        watchedTmdbIds = Set(rows.filter { $0.watched }.compactMap { $0.tmdbId })
 
         // One transition for the whole batch — not one per season.
         await syncLibraryMembership(wasEmpty: wasEmpty, userId: userId)
@@ -650,7 +666,7 @@ struct BingeShowDetailView: View {
     private func writeSeason(_ season: Int, watched on: Bool, userId: String) async {
         let episodes = episodesBySeason[season] ?? []
         for ep in episodes {
-            if on { watched.insert(ep.id) } else { watched.remove(ep.id) }
+            if on { watchedTmdbIds.insert(ep.id) } else { watchedTmdbIds.remove(ep.id) }
         }
         let showTitle = showTitleForWrite
         await withTaskGroup(of: Void.self) { group in

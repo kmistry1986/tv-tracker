@@ -23,7 +23,7 @@ struct TVShow: Identifiable, Codable {
 }
 
 struct Episode: Identifiable, Codable {
-    let id: Int
+    let id: Int? // Database surrogate key (read-only, auto-generated)
     let showId: Int
     let tmdbId: Int
     let seasonNumber: Int
@@ -37,7 +37,7 @@ struct Episode: Identifiable, Codable {
     let showTitle: String?
 
     enum CodingKeys: String, CodingKey {
-        case id
+        case id = "id_surrogate"
         case showId = "show_id"
         case tmdbId = "tmdb_id"
         case seasonNumber = "season_number"
@@ -49,6 +49,22 @@ struct Episode: Identifiable, Codable {
         case watched
         case watchedAt = "watched_at"
         case showTitle = "show_title"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        // Don't send id_surrogate on INSERT — Supabase auto-generates it
+        try container.encode(showId, forKey: .showId)
+        try container.encode(tmdbId, forKey: .tmdbId)
+        try container.encode(seasonNumber, forKey: .seasonNumber)
+        try container.encode(episodeNumber, forKey: .episodeNumber)
+        try container.encode(name, forKey: .name)
+        try container.encode(overview, forKey: .overview)
+        try container.encode(airDate, forKey: .airDate)
+        try container.encode(userId, forKey: .userId)
+        try container.encode(watched, forKey: .watched)
+        try container.encode(watchedAt, forKey: .watchedAt)
+        try container.encode(showTitle, forKey: .showTitle)
     }
 }
 

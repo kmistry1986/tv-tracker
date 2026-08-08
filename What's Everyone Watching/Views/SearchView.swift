@@ -390,7 +390,7 @@ struct SearchDetailView: View {
                     print("📺 Season \(season): \(seasonDetail.episodes.count) episodes")
                     for episodeDetail in seasonDetail.episodes {
                         let episode = Episode(
-                            id: episodeDetail.id,
+                            id: nil,
                             showId: id,
                             tmdbId: episodeDetail.id,
                             seasonNumber: episodeDetail.seasonNumber,

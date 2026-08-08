@@ -83,6 +83,7 @@ final class BingeYouEngine: ObservableObject {
 
         // Watched episodes, grouped by show — the source of progress.
         let episodes = (try? await supabase.fetchUserEpisodes(userId: userId)) ?? []
+        print("📺 Loaded \(episodes.count) episodes")
         var counts: [Int: Int] = [:]
         var latest: [Int: (Int, Int)] = [:]
         for ep in episodes where ep.watched {
@@ -96,6 +97,7 @@ final class BingeYouEngine: ObservableObject {
         }
 
         let shows = (try? await supabase.fetchUserShows(userId: userId)) ?? []
+        print("📺 Loaded \(shows.count) user shows")
         var built: [BingeLibraryItem] = []
         var seenShowIds = Set<Int>()
 
@@ -138,8 +140,10 @@ final class BingeYouEngine: ObservableObject {
         }
 
         library = built.sorted { $0.progress > $1.progress }
+        print("📺 Library has \(library.count) items")
 
         let list = (try? await supabase.fetchWatchlistShows(userId: userId)) ?? []
+        print("📺 Watchlist has \(list.count) items")
         var wl: [BingeLibraryItem] = []
         for row in list {
             guard let show = try? await supabase.fetchShowById(id: row.showId) else { continue }
