@@ -350,7 +350,8 @@ struct MovieDetailView: View {
                     title: movieDetail.title,
                     overview: movieDetail.overview,
                     posterUrl: movieDetail.posterPath.flatMap { "https://image.tmdb.org/t/p/w500\($0)" },
-                    releaseDate: movieDetail.releaseDate
+                    releaseDate: movieDetail.releaseDate,
+                    runtime: movieDetail.runtime
                 )
                 try await supabase.insertMovie(movie: movie)
 

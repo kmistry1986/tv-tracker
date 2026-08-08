@@ -326,18 +326,20 @@ struct MovieDetail: Decodable {
     let overview: String
     let posterPath: String?
     let releaseDate: String?
-    
+    let runtime: Int?
+
     var imageUrl: String? {
         guard let path = posterPath else { return nil }
         return "\(TMDBService.shared.imageBaseURL)\(path)"
     }
-    
+
     enum CodingKeys: String, CodingKey {
         case id
         case title
         case overview
         case posterPath = "poster_path"
         case releaseDate = "release_date"
+        case runtime
     }
 }
 

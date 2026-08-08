@@ -122,6 +122,9 @@ struct BingeMovieDetailView: View {
             if let release = d.releaseDate, release.count >= 4 {
                 parts.append(String(release.prefix(4)))
             }
+            if let runtime = d.runtime, runtime > 0 {
+                parts.append("\(runtime) min")
+            }
         }
         return parts.isEmpty ? "Movie" : parts.joined(separator: " · ")
     }

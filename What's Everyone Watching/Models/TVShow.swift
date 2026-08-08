@@ -75,7 +75,8 @@ struct Movie: Identifiable, Codable {
     let overview: String
     let posterUrl: String?
     let releaseDate: String?
-    
+    let runtime: Int?
+
     enum CodingKeys: String, CodingKey {
         case id
         case tmdbId = "tmdb_id"
@@ -83,6 +84,7 @@ struct Movie: Identifiable, Codable {
         case overview
         case posterUrl = "poster_url"
         case releaseDate = "release_date"
+        case runtime
     }
 }
 

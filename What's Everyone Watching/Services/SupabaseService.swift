@@ -400,6 +400,36 @@ class SupabaseService: NSObject, ObservableObject {
         print("   response=\(responseStr)")
     }
 
+    func deleteEpisodeByCompositeKey(
+        showId: Int,
+        seasonNumber: Int,
+        episodeNumber: Int,
+        userId: String
+    ) async throws {
+        let endpoint = "\(supabaseURL)/rest/v1/episodes?show_id=eq.\(showId)&season_number=eq.\(seasonNumber)&episode_number=eq.\(episodeNumber)&user_id=eq.\(userId)"
+        print("🗑️ Deleting episode by composite key: show_id=\(showId), season=\(seasonNumber), episode=\(episodeNumber), user_id=\(userId)")
+        var request = URLRequest(url: URL(string: endpoint)!)
+        request.httpMethod = "DELETE"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        if !authToken.isEmpty {
+            request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let responseStr = String(data: data, encoding: .utf8) ?? ""
+
+        if statusCode == 204 || statusCode == 200 {
+            print("✅ Deleted episode S\(seasonNumber)E\(episodeNumber) by composite key - status=\(statusCode)")
+            return
+        }
+
+        print("⚠️ deleteEpisodeByCompositeKey FAILED!")
+        print("   show_id=\(showId), season=\(seasonNumber), episode=\(episodeNumber), user_id=\(userId)")
+        print("   status=\(statusCode), response=\(responseStr)")
+    }
+
     private func updateEpisodeWatchedById(episodeId: Int, watched: Bool, watchedAt: String?) async throws {
         let endpoint = "\(supabaseURL)/rest/v1/episodes?id=eq.\(episodeId)"
         var request = URLRequest(url: URL(string: endpoint)!)
@@ -508,7 +538,7 @@ class SupabaseService: NSObject, ObservableObject {
     }
 
     func fetchUserEpisodes(userId: String) async throws -> [Episode] {
-        let endpoint = "\(supabaseURL)/rest/v1/episodes?user_id=eq.\(userId)&watched=eq.true&order=watched_at.desc"
+        let endpoint = "\(supabaseURL)/rest/v1/episodes?user_id=eq.\(userId)&order=watched_at.desc"
         return try await fetch(endpoint: endpoint)
     }
     
@@ -757,7 +787,7 @@ class SupabaseService: NSObject, ObservableObject {
         if let tmdbMovie = try? await TMDBService.shared.getMovie(id: movieId) {
             let movie = Movie(id: movieId, tmdbId: movieId, title: tmdbMovie.title,
                             overview: tmdbMovie.overview, posterUrl: tmdbMovie.imageUrl,
-                            releaseDate: tmdbMovie.releaseDate)
+                            releaseDate: tmdbMovie.releaseDate, runtime: tmdbMovie.runtime)
             try? await insertMovie(movie: movie)
         }
 
@@ -1413,7 +1443,8 @@ extension SupabaseService {
                     let tmdbMovie = try await TMDBService.shared.getMovie(id: watchlistMovie.movieId)
                     let movie = Movie(id: watchlistMovie.movieId, tmdbId: watchlistMovie.movieId,
                                     title: tmdbMovie.title, overview: tmdbMovie.overview,
-                                    posterUrl: tmdbMovie.imageUrl, releaseDate: tmdbMovie.releaseDate)
+                                    posterUrl: tmdbMovie.imageUrl, releaseDate: tmdbMovie.releaseDate,
+                                    runtime: tmdbMovie.runtime)
                     try await insertMovie(movie: movie)
                     print("✅ Inserted movie \(watchlistMovie.movieId): \(tmdbMovie.title)")
                     moviesReconciled += 1

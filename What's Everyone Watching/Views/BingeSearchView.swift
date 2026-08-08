@@ -371,7 +371,7 @@ final class BingeSearchEngine: ObservableObject {
                         if let tmdbMovie = try? await TMDBService.shared.getMovie(id: result.tmdbId) {
                             let movie = Movie(id: result.tmdbId, tmdbId: result.tmdbId, title: tmdbMovie.title,
                                             overview: tmdbMovie.overview, posterUrl: tmdbMovie.imageUrl,
-                                            releaseDate: tmdbMovie.releaseDate)
+                                            releaseDate: tmdbMovie.releaseDate, runtime: tmdbMovie.runtime)
                             try? await supabase.insertMovie(movie: movie)
                         }
                         let today = ISO8601DateFormatter().string(from: Date())
@@ -604,7 +604,9 @@ struct BingeSearchView: View {
             BingeRatingSheet(title: result.title,
                            posterUrl: result.posterUrl,
                            itemId: result.tmdbId,
-                           isMovie: result.isMovie) { _, _ in
+                           isMovie: result.isMovie,
+                           existingRating: engine.showRatings[result.tmdbId] ?? 0) { newRating, _ in
+                if newRating > 0 { engine.updateRating(showId: result.tmdbId, rating: newRating) }
                 engine.ratingTarget = nil
             }
         }
@@ -694,10 +696,9 @@ struct BingeSearchView: View {
         let counts = engine.showEpisodeCounts[result.tmdbId]
         let progressStr = counts.map { "\($0.watched) of \($0.total)" } ?? ""
         let watchStatusTitle = isFull ? "Watched" : (isPartial && isInLibrary ? "In Progress\n\(progressStr)" : (onList ? "Added to\nWatchlist" : "Add to\nWatchlist"))
-        let rating = engine.showRatings[result.tmdbId]
-        @State var showRatingSheet = false
+        let rating = engine.showRatings[result.tmdbId] ?? 0
 
-        return VStack(spacing: 4) {
+        return VStack(spacing: 6) {
             Button {
                 if canAddToWatchlist || onList {
                     Task { await engine.toggleWatchlist(result) }
@@ -711,40 +712,35 @@ struct BingeSearchView: View {
             .buttonStyle(.plain)
             .opacity(canAddToWatchlist || onList || isFull ? 1.0 : 0.5)
 
+            // Rated: five ink stars. Unrated: one accent RATE link — the ghost row
+            // and the "click to rate" caption said the same thing twice.
             if isFull {
                 Button {
-                    showRatingSheet = true
+                    engine.ratingTarget = result
                 } label: {
-                    VStack(spacing: 2) {
-                        HStack(spacing: 1.5) {
-                            ForEach(1...5, id: \.self) { star in
-                                Image(systemName: star <= (rating ?? 0) ? "star.fill" : "star")
-                                    .font(.system(size: 13))
-                                    .foregroundColor(star <= (rating ?? 0) ? .yellow : Color.white.opacity(0.3))
+                    Group {
+                        if rating > 0 {
+                            HStack(spacing: 3) {
+                                ForEach(1...5, id: \.self) { star in
+                                    Image(systemName: star <= rating ? "star.fill" : "star")
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(star <= rating ? BingeTheme.ink : BingeTheme.inkFaint)
+                                }
                             }
-                        }
-                        if (rating ?? 0) == 0 {
-                            Text("Click to Rate")
-                                .bingeLabel(9)
+                        } else {
+                            Text("Rate")
+                                .bingeLabel(10)
                                 .foregroundStyle(BingeTheme.accent)
                         }
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, minHeight: 22)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(rating > 0 ? "Rated \(rating) out of 5. Change rating" : "Rate this")
             }
         }
         .frame(width: 104)
-        .sheet(isPresented: $showRatingSheet) {
-            BingeRatingSheet(title: result.title,
-                           posterUrl: result.posterUrl,
-                           itemId: result.tmdbId,
-                           isMovie: result.isMovie,
-                           existingRating: rating ?? 0) { newRating, _ in
-                engine.updateRating(showId: result.tmdbId, rating: newRating)
-                showRatingSheet = false
-            }
-        }
     }
 
     private func rowAction(title: String, active: Bool, accent: Bool) -> some View {

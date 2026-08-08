@@ -538,7 +538,8 @@ struct NetflixImportView: View {
                                 title: firstResult.title,
                                 overview: firstResult.overview ?? "",
                                 posterUrl: firstResult.imageUrl,
-                                releaseDate: firstResult.releaseDate
+                                releaseDate: firstResult.releaseDate,
+                                runtime: nil
                             )
                             try await supabase.insertMovie(movie: movie)
 

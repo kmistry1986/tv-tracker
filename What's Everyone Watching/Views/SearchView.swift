@@ -431,7 +431,8 @@ struct SearchDetailView: View {
                     title: detail.title,
                     overview: detail.overview,
                     posterUrl: detail.imageUrl,
-                    releaseDate: detail.releaseDate
+                    releaseDate: detail.releaseDate,
+                    runtime: detail.runtime
                 )
                 try await supabase.insertMovie(movie: movie)
 
