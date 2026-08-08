@@ -364,6 +364,14 @@ struct BingeShowDetailView: View {
         do {
             let d = try await tmdb.getTVShow(id: tmdbId)
             details = d
+
+            // Ensure show exists in database for episode tracking
+            let show = TVShow(id: tmdbId, tmdbId: tmdbId, title: d.name,
+                            overview: d.overview, posterUrl: d.imageUrl,
+                            firstAirDate: d.firstAirDate, numberOfSeasons: d.numberOfSeasons,
+                            numberOfEpisodes: d.numberOfEpisodes)
+            try? await supabase.insertShow(show: show)
+
             let list = d.numberOfSeasons > 0 ? Array(1...d.numberOfSeasons) : []
             seasons = list
             if !list.contains(selectedSeason) { selectedSeason = list.first ?? 1 }
