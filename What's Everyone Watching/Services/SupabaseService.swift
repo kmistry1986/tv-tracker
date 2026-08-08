@@ -101,11 +101,13 @@ class SupabaseService: NSObject, ObservableObject {
         struct SignUpResponse: Decodable {
             let id: String
             let access_token: String?
+            let refresh_token: String?
         }
 
         let signupResponse = try JSONDecoder().decode(SignUpResponse.self, from: data)
         let userId = signupResponse.id
         let accessToken = signupResponse.access_token ?? ""
+        let refreshToken = signupResponse.refresh_token ?? ""
         print("SignUp userId: \(userId)")
 
         let user = User(id: userId, email: email, name: name, avatarUrl: nil)
@@ -117,7 +119,7 @@ class SupabaseService: NSObject, ObservableObject {
             self.currentUser = user
             self.isLoggedIn = true
             self.profileSetupNeeded = true
-            self.saveSession(user: user, token: "")
+            self.saveSession(user: user, token: accessToken, refreshToken: refreshToken)
             self.setProfileSetupNeeded(true)
         }
 
