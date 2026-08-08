@@ -355,7 +355,8 @@ struct ImportView: View {
                                 posterUrl: showDetail.imageUrl,
                                 firstAirDate: showDetail.firstAirDate,
                                 numberOfSeasons: showDetail.numberOfSeasons,
-                                numberOfEpisodes: showDetail.numberOfEpisodes
+                                numberOfEpisodes: showDetail.numberOfEpisodes,
+                                platforms: nil
                             )
                             do {
                                 try await supabase.insertShow(show: tvShow)
@@ -432,7 +433,8 @@ struct ImportView: View {
                                 overview: firstResult.overview ?? "",
                                 posterUrl: firstResult.imageUrl,
                                 releaseDate: firstResult.releaseDate,
-                                runtime: nil
+                                runtime: nil,
+                                platforms: nil
                             )
                             try await supabase.insertMovie(movie: movie)
                             print("✅ Imported: \(entry.showName)")

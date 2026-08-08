@@ -19,6 +19,9 @@ struct BingeLibraryItem: Identifiable {
     var watchedEpisodes: Int = 0
     var lastSeason: Int? = nil
     var lastEpisode: Int? = nil
+    /// Set once movies can be listed here; false for series.
+    var isMovie: Bool = false
+    var runtimeMinutes: Int? = nil
 
     var totalEpisodes: Int { show.numberOfEpisodes }
 
@@ -47,6 +50,22 @@ struct BingeLibraryItem: Identifiable {
             if let rating { parts.append("Rated \(rating)") }
         }
         return parts.isEmpty ? "Series" : parts.joined(separator: " · ")
+    }
+
+    /// Finished rows state a fact about the title, not progress — there is none
+    /// left. Kind first, so a series and a film are told apart at a glance
+    /// rather than inferred from the unit.
+    /// Movies read plain "Film" until SupabaseService gains a fetchMovieById
+    /// that can supply a real runtime.
+    var finishedMeta: String {
+        if isMovie {
+            guard let mins = runtimeMinutes, mins > 0 else { return "Film" }
+            let h = mins / 60, m = mins % 60
+            if h == 0 { return "Film · \(m)m" }
+            return m == 0 ? "Film · \(h)h" : "Film · \(h)h \(m)m"
+        }
+        guard totalEpisodes > 0 else { return "Series" }
+        return "Series · \(totalEpisodes) episode\(totalEpisodes == 1 ? "" : "s")"
     }
 }
 
@@ -199,7 +218,7 @@ struct BingeYouView: View {
                 BingeRatingSheet(title: item.show.title,
                                  posterUrl: item.show.posterUrl,
                                  itemId: item.show.id,
-                                 isMovie: false,
+                                 isMovie: item.isMovie,
                                  existingRating: item.rating) { _, _ in
                     Task { await engine.load() }
                 }
@@ -385,17 +404,39 @@ struct BingeYouView: View {
             BingePoster(urlString: item.show.posterUrl, width: 56, height: 80)
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.show.title).bingeHeadline(16).lineLimit(1)
-                Text(item.subtitle).bingeBody(12).foregroundStyle(BingeTheme.inkMuted).lineLimit(1)
-                if item.isFinished && item.rating != nil {
-                    HStack(spacing: 2) {
-                        ForEach(1...5, id: \.self) { star in
-                            Image(systemName: star <= (item.rating ?? 0) ? "star.fill" : "star")
-                                .font(.system(size: 14))
-                                .foregroundStyle(star <= (item.rating ?? 0) ? BingeTheme.accent : BingeTheme.hairline)
+
+                // Finished: a fact about the title. Everything else: where you are.
+                Text(item.isFinished ? item.finishedMeta : item.subtitle)
+                    .bingeBody(12).foregroundStyle(BingeTheme.inkMuted).lineLimit(1)
+
+                if item.isFinished {
+                    // The verdict, always on the same line whether set or not — so
+                    // rating something doesn't reflow the list.
+                    Button { ratingTarget = item } label: {
+                        Group {
+                            if let rating = item.rating, rating > 0 {
+                                HStack(spacing: 3) {
+                                    ForEach(1...5, id: \.self) { star in
+                                        Image(systemName: star <= rating ? "star.fill" : "star")
+                                            .font(.system(size: 13))
+                                            .foregroundStyle(star <= rating ? BingeTheme.ink : BingeTheme.inkFaint)
+                                    }
+                                    Spacer(minLength: 0)
+                                }
+                            } else {
+                                HStack {
+                                    Text("Rate it").bingeLabel(10).foregroundStyle(BingeTheme.accent)
+                                    Spacer(minLength: 0)
+                                }
+                            }
                         }
-                        Spacer(minLength: 0)
+                        .frame(height: 18)
+                        .contentShape(Rectangle())
                     }
-                    .frame(height: 18)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel((item.rating ?? 0) > 0
+                                        ? "Rated \(item.rating ?? 0) out of 5. Change rating"
+                                        : "Rate this")
                 } else if item.totalEpisodes > 0 && item.watchedEpisodes > 0 {
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
@@ -407,32 +448,21 @@ struct BingeYouView: View {
                     .frame(height: 3)
                 }
             }
-            Spacer(minLength: 84)
+            Spacer(minLength: 24)
         }
         .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 16)
     }
 
-    /// "Rate it" is the only trailing label that acts on its own — it opens the
-    /// rating sheet instead of pushing the detail view.
+    /// Finished rows carry their own rating control inside the row, so nothing
+    /// trails them. Watchlist and in-progress rows keep their verb.
     @ViewBuilder
     private func trailingAction(_ item: BingeLibraryItem) -> some View {
-        if !item.isWatchlist && !item.isWatching && item.rating == nil {
-            Button { ratingTarget = item } label: {
-                Text("Rate it").bingeLabel(11).foregroundStyle(BingeTheme.accent)
-                    .padding(.vertical, 12).padding(.leading, 12)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        } else if !item.isWatchlist && item.rating != nil {
-            Button { ratingTarget = item } label: {
-                Text("\(item.rating ?? 0)/5").bingeLabel(11)
-                    .foregroundStyle(BingeTheme.inkMuted)
-                    .padding(.vertical, 12).padding(.leading, 12)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        } else {
-            Text(item.isWatchlist ? "Start" : "Resume")
+        if item.isWatchlist {
+            Text("Start")
+                .bingeLabel(11).foregroundStyle(BingeTheme.accent)
+                .padding(.vertical, 12)
+        } else if item.isWatching {
+            Text("Resume")
                 .bingeLabel(11).foregroundStyle(BingeTheme.accent)
                 .padding(.vertical, 12)
         }

@@ -381,7 +381,30 @@ struct WatchProvidersResult: Decodable {
     var streamingProviders: [WatchProvider] {
         (flatrate ?? []) + (free ?? [])
     }
-    
+
+    // Convert all providers to PlatformInfo array
+    var platformInfoArray: [PlatformInfo] {
+        var platforms: [(provider: WatchProvider, type: String)] = []
+        if let flatrate = flatrate {
+            platforms.append(contentsOf: flatrate.map { ($0, "streaming") })
+        }
+        if let free = free {
+            platforms.append(contentsOf: free.map { ($0, "free") })
+        }
+        if let buy = buy {
+            platforms.append(contentsOf: buy.map { ($0, "buy") })
+        }
+        if let rent = rent {
+            platforms.append(contentsOf: rent.map { ($0, "rent") })
+        }
+
+        // Remove duplicates based on provider_id, keep first occurrence
+        let unique = Dictionary(grouping: platforms, by: { $0.provider.providerId })
+            .compactMap { $0.value.first }
+
+        return unique.map { PlatformInfo(name: $0.provider.providerName, logoPath: $0.provider.logoPath, type: $0.type) }
+    }
+
     enum CodingKeys: String, CodingKey {
         case link
         case flatrate

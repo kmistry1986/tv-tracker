@@ -750,7 +750,7 @@ class SupabaseService: NSObject, ObservableObject {
             let show = TVShow(id: showId, tmdbId: showId, title: tmdbShow.name,
                             overview: tmdbShow.overview, posterUrl: tmdbShow.imageUrl,
                             firstAirDate: tmdbShow.firstAirDate, numberOfSeasons: tmdbShow.numberOfSeasons,
-                            numberOfEpisodes: tmdbShow.numberOfEpisodes)
+                            numberOfEpisodes: tmdbShow.numberOfEpisodes, platforms: nil)
             try? await insertShow(show: show)
         }
 
@@ -785,9 +785,13 @@ class SupabaseService: NSObject, ObservableObject {
 
         // Fetch movie from TMDB and insert into movies table
         if let tmdbMovie = try? await TMDBService.shared.getMovie(id: movieId) {
+            var platforms: [PlatformInfo]? = nil
+            if let providers = try? await TMDBService.shared.getMovieWatchProviders(movieId: movieId) {
+                platforms = providers.platformInfoArray
+            }
             let movie = Movie(id: movieId, tmdbId: movieId, title: tmdbMovie.title,
                             overview: tmdbMovie.overview, posterUrl: tmdbMovie.imageUrl,
-                            releaseDate: tmdbMovie.releaseDate, runtime: tmdbMovie.runtime)
+                            releaseDate: tmdbMovie.releaseDate, runtime: tmdbMovie.runtime, platforms: nil)
             try? await insertMovie(movie: movie)
         }
 
@@ -828,7 +832,7 @@ class SupabaseService: NSObject, ObservableObject {
             let show = TVShow(id: showId, tmdbId: showId, title: tmdbShow.name,
                             overview: tmdbShow.overview, posterUrl: tmdbShow.imageUrl,
                             firstAirDate: tmdbShow.firstAirDate, numberOfSeasons: tmdbShow.numberOfSeasons,
-                            numberOfEpisodes: tmdbShow.numberOfEpisodes)
+                            numberOfEpisodes: tmdbShow.numberOfEpisodes, platforms: nil)
             try? await insertShow(show: show)
         }
 
@@ -1418,7 +1422,7 @@ extension SupabaseService {
                                     title: tmdbShow.name, overview: tmdbShow.overview,
                                     posterUrl: tmdbShow.imageUrl, firstAirDate: tmdbShow.firstAirDate,
                                     numberOfSeasons: tmdbShow.numberOfSeasons,
-                                    numberOfEpisodes: tmdbShow.numberOfEpisodes)
+                                    numberOfEpisodes: tmdbShow.numberOfEpisodes, platforms: nil)
                     try await insertShow(show: show)
                     print("✅ Inserted show \(watchlistShow.showId): \(tmdbShow.name)")
                     showsReconciled += 1
@@ -1444,7 +1448,7 @@ extension SupabaseService {
                     let movie = Movie(id: watchlistMovie.movieId, tmdbId: watchlistMovie.movieId,
                                     title: tmdbMovie.title, overview: tmdbMovie.overview,
                                     posterUrl: tmdbMovie.imageUrl, releaseDate: tmdbMovie.releaseDate,
-                                    runtime: tmdbMovie.runtime)
+                                    runtime: tmdbMovie.runtime, platforms: nil)
                     try await insertMovie(movie: movie)
                     print("✅ Inserted movie \(watchlistMovie.movieId): \(tmdbMovie.title)")
                     moviesReconciled += 1
@@ -1458,5 +1462,91 @@ extension SupabaseService {
         }
 
         print("Reconciliation complete: \(showsReconciled) shows and \(moviesReconciled) movies added. Failed: \(showsFailed) shows, \(moviesFailed) movies")
+    }
+
+    func backfillPlatformsForShows() async {
+        do {
+            let allShows: [TVShow] = try await fetch(endpoint: "\(supabaseURL)/rest/v1/tv_shows")
+            var updated = 0
+            var failed = 0
+
+            for show in allShows {
+                do {
+                    if let providers = try? await TMDBService.shared.getTVWatchProviders(tvId: show.tmdbId) {
+                        let platforms = providers.platformInfoArray
+                        let endpoint = "\(supabaseURL)/rest/v1/tv_shows?id=eq.\(show.id)"
+
+                        var request = URLRequest(url: URL(string: endpoint)!)
+                        request.httpMethod = "PATCH"
+                        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                        request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+                        if !authToken.isEmpty {
+                            request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+                        }
+
+                        let payload = ["platforms": platforms]
+                        request.httpBody = try JSONEncoder().encode(payload)
+
+                        let (_, response) = try await URLSession.shared.data(for: request)
+                        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+
+                        if statusCode == 200 {
+                            updated += 1
+                            print("✅ Updated platforms for show: \(show.title)")
+                        }
+                    }
+                } catch {
+                    failed += 1
+                    print("❌ Failed to update show \(show.title): \(error)")
+                }
+            }
+
+            print("Backfill complete: \(updated) shows updated, \(failed) failed")
+        } catch {
+            print("Error fetching shows for backfill: \(error)")
+        }
+    }
+
+    func backfillPlatformsForMovies() async {
+        do {
+            let allMovies: [Movie] = try await fetch(endpoint: "\(supabaseURL)/rest/v1/movies")
+            var updated = 0
+            var failed = 0
+
+            for movie in allMovies {
+                do {
+                    if let providers = try? await TMDBService.shared.getMovieWatchProviders(movieId: movie.tmdbId) {
+                        let platforms = providers.platformInfoArray
+                        let endpoint = "\(supabaseURL)/rest/v1/movies?id=eq.\(movie.id)"
+
+                        var request = URLRequest(url: URL(string: endpoint)!)
+                        request.httpMethod = "PATCH"
+                        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                        request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+                        if !authToken.isEmpty {
+                            request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+                        }
+
+                        let payload = ["platforms": platforms]
+                        request.httpBody = try JSONEncoder().encode(payload)
+
+                        let (_, response) = try await URLSession.shared.data(for: request)
+                        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+
+                        if statusCode == 200 {
+                            updated += 1
+                            print("✅ Updated platforms for movie: \(movie.title)")
+                        }
+                    }
+                } catch {
+                    failed += 1
+                    print("❌ Failed to update movie \(movie.title): \(error)")
+                }
+            }
+
+            print("Backfill complete: \(updated) movies updated, \(failed) failed")
+        } catch {
+            print("Error fetching movies for backfill: \(error)")
+        }
     }
 }

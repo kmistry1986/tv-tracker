@@ -371,7 +371,7 @@ final class BingeSearchEngine: ObservableObject {
                         if let tmdbMovie = try? await TMDBService.shared.getMovie(id: result.tmdbId) {
                             let movie = Movie(id: result.tmdbId, tmdbId: result.tmdbId, title: tmdbMovie.title,
                                             overview: tmdbMovie.overview, posterUrl: tmdbMovie.imageUrl,
-                                            releaseDate: tmdbMovie.releaseDate, runtime: tmdbMovie.runtime)
+                                            releaseDate: tmdbMovie.releaseDate, runtime: tmdbMovie.runtime, platforms: nil)
                             try? await supabase.insertMovie(movie: movie)
                         }
                         let today = ISO8601DateFormatter().string(from: Date())
@@ -382,7 +382,7 @@ final class BingeSearchEngine: ObservableObject {
                             let show = TVShow(id: result.tmdbId, tmdbId: result.tmdbId, title: tmdbShow.name,
                                             overview: tmdbShow.overview, posterUrl: tmdbShow.imageUrl,
                                             firstAirDate: tmdbShow.firstAirDate, numberOfSeasons: tmdbShow.numberOfSeasons,
-                                            numberOfEpisodes: tmdbShow.numberOfEpisodes)
+                                            numberOfEpisodes: tmdbShow.numberOfEpisodes, platforms: nil)
                             try? await supabase.insertShow(show: show)
                         }
 

@@ -381,7 +381,7 @@ struct BingeShowDetailView: View {
             let show = TVShow(id: tmdbId, tmdbId: tmdbId, title: d.name,
                             overview: d.overview, posterUrl: d.imageUrl,
                             firstAirDate: d.firstAirDate, numberOfSeasons: d.numberOfSeasons,
-                            numberOfEpisodes: d.numberOfEpisodes)
+                            numberOfEpisodes: d.numberOfEpisodes, platforms: nil)
             try? await supabase.insertShow(show: show)
 
             let list = d.numberOfSeasons > 0 ? Array(1...d.numberOfSeasons) : []
@@ -554,7 +554,7 @@ struct BingeShowDetailView: View {
                 let show = TVShow(id: dbShowId ?? tmdbId, tmdbId: tmdbId, title: details.name,
                                 overview: details.overview, posterUrl: details.imageUrl,
                                 firstAirDate: details.firstAirDate, numberOfSeasons: details.numberOfSeasons,
-                                numberOfEpisodes: details.numberOfEpisodes)
+                                numberOfEpisodes: details.numberOfEpisodes, platforms: nil)
                 let item = BingeLibraryItem(id: dbShowId ?? tmdbId, show: show, rating: rating,
                                           watchedDate: ISO8601DateFormatter().string(from: Date()),
                                           isWatchlist: false, watchedEpisodes: watchedCount,

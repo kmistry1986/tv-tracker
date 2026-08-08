@@ -19,8 +19,9 @@ final class BingeSettingsEngine: ObservableObject {
     @Published var isSaving = false
     @Published var message: String?
     @Published var showClearConfirm = false
+    @Published var isBackfilling = false
 
-    private let supabase = SupabaseService.shared
+    let supabase = SupabaseService.shared
 
     func load() async {
         guard let userId = supabase.currentUser?.id else { return }
@@ -230,6 +231,18 @@ struct BingeSettingsView: View {
                 Text("Watch history comes from a Netflix CSV export, not a live connection. Re-import any time from the You tab.")
                     .bingeBody(12).foregroundStyle(BingeTheme.inkMuted)
                     .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    BingeChip(title: "Backfill platforms", muted: engine.isBackfilling) {
+                        Task {
+                            engine.isBackfilling = true
+                            await engine.supabase.backfillPlatformsForShows()
+                            await engine.supabase.backfillPlatformsForMovies()
+                            engine.message = "✅ Platform backfill complete!"
+                            engine.isBackfilling = false
+                        }
+                    }
+                    .disabled(engine.isBackfilling)
+                }
                 HStack(spacing: 8) {
                     BingeChip(title: "Clear history", muted: true) {
                         engine.showClearConfirm = true

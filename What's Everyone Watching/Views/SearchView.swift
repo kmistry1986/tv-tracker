@@ -376,7 +376,8 @@ struct SearchDetailView: View {
                     posterUrl: showDetail.imageUrl,
                     firstAirDate: showDetail.firstAirDate,
                     numberOfSeasons: showDetail.numberOfSeasons,
-                    numberOfEpisodes: showDetail.numberOfEpisodes
+                    numberOfEpisodes: showDetail.numberOfEpisodes,
+                    platforms: nil
                 )
                 do {
                     try await supabase.insertShow(show: tvShow)
@@ -432,7 +433,8 @@ struct SearchDetailView: View {
                     overview: detail.overview,
                     posterUrl: detail.imageUrl,
                     releaseDate: detail.releaseDate,
-                    runtime: detail.runtime
+                    runtime: detail.runtime,
+                    platforms: nil
                 )
                 try await supabase.insertMovie(movie: movie)
 

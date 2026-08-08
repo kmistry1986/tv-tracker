@@ -309,7 +309,8 @@ final class TonightEngine: ObservableObject {
                posterUrl: r.imageUrl,
                firstAirDate: nil,
                numberOfSeasons: 0,
-               numberOfEpisodes: 0)
+               numberOfEpisodes: 0,
+               platforms: nil)
     }
 }
 

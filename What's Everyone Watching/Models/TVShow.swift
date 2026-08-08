@@ -9,7 +9,8 @@ struct TVShow: Identifiable, Codable {
     let firstAirDate: String?
     let numberOfSeasons: Int
     let numberOfEpisodes: Int
-    
+    let platforms: [PlatformInfo]?
+
     enum CodingKeys: String, CodingKey {
         case id
         case tmdbId = "tmdb_id"
@@ -19,6 +20,19 @@ struct TVShow: Identifiable, Codable {
         case firstAirDate = "first_air_date"
         case numberOfSeasons = "number_of_seasons"
         case numberOfEpisodes = "number_of_episodes"
+        case platforms
+    }
+}
+
+struct PlatformInfo: Codable {
+    let name: String
+    let logoPath: String?
+    let type: String
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case logoPath = "logo_path"
+        case type
     }
 }
 
@@ -76,6 +90,7 @@ struct Movie: Identifiable, Codable {
     let posterUrl: String?
     let releaseDate: String?
     let runtime: Int?
+    let platforms: [PlatformInfo]?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -85,6 +100,7 @@ struct Movie: Identifiable, Codable {
         case posterUrl = "poster_url"
         case releaseDate = "release_date"
         case runtime
+        case platforms
     }
 }
 

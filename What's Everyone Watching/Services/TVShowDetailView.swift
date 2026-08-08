@@ -377,7 +377,8 @@ struct TVShowDetailView: View {
                         posterUrl: show.posterPath.flatMap { "https://image.tmdb.org/t/p/w500\($0)" },
                         firstAirDate: show.firstAirDate,
                         numberOfSeasons: show.numberOfSeasons,
-                        numberOfEpisodes: show.numberOfEpisodes
+                        numberOfEpisodes: show.numberOfEpisodes,
+                        platforms: nil
                     )
                     try await supabase.insertShow(show: tvShow)
                     print("✅ Show inserted to tv_shows table")
