@@ -42,7 +42,7 @@ final class BingeSearchEngine: ObservableObject {
     @Published private(set) var requested: Set<String> = []
     @Published var ratingTarget: BingeSearchResult?
 
-    private var watchlistShows: Set<Int> = []
+    @Published private(set) var watchlistShows: Set<Int> = []
     private var watchlistMovies: Set<Int> = []
     /// movie tmdb id -> watchlist_movies row id (that table only deletes by row id)
     private var watchlistMovieRows: [Int: Int] = [:]
