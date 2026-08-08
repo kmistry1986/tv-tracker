@@ -43,8 +43,8 @@ struct RootView: View {
         .task {
             await StreamingPlatformMapper.loadPlatforms()
 
-            // Keep launch screen visible for ~0.9s or until auth resolves
-            try? await Task.sleep(nanoseconds: 900_000_000)
+            // Keep launch screen visible for ~1.5s or until auth resolves
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
 
             withAnimation(reduceMotion ? .none : .easeInOut(duration: 0.3)) {
                 showLaunch = false

@@ -50,6 +50,7 @@ final class BingeSearchEngine: ObservableObject {
     private var libraryMovies: Set<Int> = []
     private var finishedShows: Set<Int> = []
     @Published private(set) var showEpisodeCounts: [Int: (watched: Int, total: Int)] = [:]
+    @Published private(set) var showRatings: [Int: Int] = [:]
     private let supabase = SupabaseService.shared
     private var searchTask: Task<Void, Never>?
     private var lastPrimeTime: Date = Date.distantPast
@@ -58,6 +59,14 @@ final class BingeSearchEngine: ObservableObject {
 
     // MARK: Context
 
+    func updateEpisodeCount(showId: Int, watched: Int, total: Int) {
+        showEpisodeCounts[showId] = (watched, total)
+    }
+
+    func updateRating(showId: Int, rating: Int) {
+        showRatings[showId] = rating
+    }
+
     func refreshLibraryState() async {
         guard let userId = supabase.currentUser?.id else { return }
 
@@ -65,6 +74,13 @@ final class BingeSearchEngine: ObservableObject {
         if let mine = try? await supabase.fetchUserShows(userId: userId) {
             libraryShows = Set(mine.map(\.showId))
             finishedShows = Set(mine.filter { ($0.rating ?? 0) > 0 }.map(\.showId))
+            var ratings: [Int: Int] = [:]
+            for show in mine {
+                if let rating = show.rating, rating > 0 {
+                    ratings[show.showId] = rating
+                }
+            }
+            showRatings = ratings
         }
 
         // Refresh episode counts for all library shows
@@ -73,6 +89,7 @@ final class BingeSearchEngine: ObservableObject {
 
         for ep in episodes {
             var counts = episodeCounts[ep.showId] ?? (0, 0)
+            counts.total += 1
             if ep.watched {
                 counts.watched += 1
             }
@@ -113,6 +130,13 @@ final class BingeSearchEngine: ObservableObject {
         if let mine = try? await supabase.fetchUserShows(userId: userId) {
             libraryShows = Set(mine.map(\.showId))
             finishedShows = Set(mine.filter { ($0.rating ?? 0) > 0 }.map(\.showId))
+            var ratings: [Int: Int] = [:]
+            for show in mine {
+                if let rating = show.rating, rating > 0 {
+                    ratings[show.showId] = rating
+                }
+            }
+            showRatings = ratings
         }
         if let myMovies = try? await supabase.fetchUserMovies(userId: userId) {
             libraryMovies = Set(myMovies.map(\.movieId))
@@ -373,12 +397,16 @@ final class BingeSearchEngine: ObservableObject {
                         libraryShows.insert(result.tmdbId)
 
                         // Insert all episodes first (wait for it), then refresh UI
+                        var allWatchedTmdbIds: Set<Int> = []
+                        var totalEpisodeCount = 0
                         if let tmdbShow = try? await TMDBService.shared.getTVShow(id: result.tmdbId) {
                             let watchedAt = ISO8601DateFormatter().string(from: Date())
                             print("📺 Inserting episodes for show \(result.tmdbId) with userId=\(userId)")
                             for season in 1...tmdbShow.numberOfSeasons {
                                 if let tmdbSeason = try? await TMDBService.shared.getTVSeason(showId: result.tmdbId, seasonNumber: season) {
                                     for episode in tmdbSeason.episodes {
+                                        allWatchedTmdbIds.insert(episode.id)
+                                        totalEpisodeCount += 1
                                         let ep = Episode(id: nil, showId: result.tmdbId, tmdbId: episode.id,
                                                        seasonNumber: season, episodeNumber: episode.episodeNumber,
                                                        name: episode.name, overview: episode.overview ?? "",
@@ -394,7 +422,8 @@ final class BingeSearchEngine: ObservableObject {
                             }
                         }
 
-                        await refreshLibraryState()
+                        // Update counts immediately so button responds right away
+                        showEpisodeCounts[result.tmdbId] = (totalEpisodeCount, totalEpisodeCount)
                         objectWillChange.send()
                         ratingTarget = result
                         return
@@ -447,7 +476,7 @@ final class BingeSearchEngine: ObservableObject {
         if let counts = showEpisodeCounts[result.tmdbId], counts.watched > 0 && counts.watched == counts.total {
             return true
         }
-        return finishedShows.contains(result.tmdbId)
+        return false
     }
 
     func isPartiallyWatched(_ result: BingeSearchResult) -> Bool {
@@ -546,7 +575,10 @@ struct BingeSearchView: View {
         }
         .onChange(of: tab) { oldTab, newTab in
             if newTab == .search {
-                Task { await engine.primeContext() }
+                fieldFocused = false
+                Task {
+                    await engine.refreshLibraryState()
+                }
             }
         }
         .onAppear {
@@ -657,10 +689,15 @@ struct BingeSearchView: View {
         let onList = engine.isOnWatchlist(result)
         let isPartial = engine.isPartiallyWatched(result)
         let isFull = engine.isFullyWatched(result)
+        let isInLibrary = engine.isInLibrary(result)
         let canAddToWatchlist = !isPartial && !isFull
-        let watchlistTitle = onList ? "Added to\nWatchlist" : "Add to\nWatchlist"
-        let watchedTitle = isFull ? "Watched" : (isPartial ? "Partially\nWatched" : "Mark as\nWatched")
-        return VStack(spacing: 6) {
+        let counts = engine.showEpisodeCounts[result.tmdbId]
+        let progressStr = counts.map { "\($0.watched) of \($0.total)" } ?? ""
+        let watchStatusTitle = isFull ? "Watched" : (isPartial && isInLibrary ? "In Progress\n\(progressStr)" : (onList ? "Added to\nWatchlist" : "Add to\nWatchlist"))
+        let rating = engine.showRatings[result.tmdbId]
+        @State var showRatingSheet = false
+
+        return VStack(spacing: 4) {
             Button {
                 if canAddToWatchlist || onList {
                     Task { await engine.toggleWatchlist(result) }
@@ -669,33 +706,45 @@ struct BingeSearchView: View {
                     showError = true
                 }
             } label: {
-                rowAction(title: watchlistTitle, active: onList, accent: false)
+                rowAction(title: watchStatusTitle, active: onList || isFull || (isPartial && isInLibrary), accent: isFull)
             }
             .buttonStyle(.plain)
-            .opacity(canAddToWatchlist || onList ? 1.0 : 0.5)
+            .opacity(canAddToWatchlist || onList || isFull ? 1.0 : 0.5)
 
-            Group {
-                if isPartial && !result.isMovie {
-                    NavigationLink {
-                        BingeShowDetailView(tmdbId: result.tmdbId,
-                                        dbShowId: result.tmdbId,
-                                        title: result.title,
-                                        searchEngine: engine)
-                    } label: {
-                        rowAction(title: watchedTitle, active: isPartial || isFull, accent: true)
+            if isFull {
+                Button {
+                    showRatingSheet = true
+                } label: {
+                    VStack(spacing: 2) {
+                        HStack(spacing: 1.5) {
+                            ForEach(1...5, id: \.self) { star in
+                                Image(systemName: star <= (rating ?? 0) ? "star.fill" : "star")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(star <= (rating ?? 0) ? .yellow : Color.white.opacity(0.3))
+                            }
+                        }
+                        if (rating ?? 0) == 0 {
+                            Text("Click to Rate")
+                                .bingeLabel(9)
+                                .foregroundStyle(BingeTheme.accent)
+                        }
                     }
-                    .buttonStyle(.plain)
-                } else {
-                    Button {
-                        Task { await engine.toggleWatched(result) }
-                    } label: {
-                        rowAction(title: watchedTitle, active: isPartial || isFull, accent: true)
-                    }
-                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity)
                 }
+                .buttonStyle(.plain)
             }
         }
         .frame(width: 104)
+        .sheet(isPresented: $showRatingSheet) {
+            BingeRatingSheet(title: result.title,
+                           posterUrl: result.posterUrl,
+                           itemId: result.tmdbId,
+                           isMovie: result.isMovie,
+                           existingRating: rating ?? 0) { newRating, _ in
+                engine.updateRating(showId: result.tmdbId, rating: newRating)
+                showRatingSheet = false
+            }
+        }
     }
 
     private func rowAction(title: String, active: Bool, accent: Bool) -> some View {
@@ -703,7 +752,7 @@ struct BingeSearchView: View {
             .bingeLabel(9)
             .lineLimit(2)
             .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity, minHeight: 38)
+            .frame(maxWidth: .infinity, minHeight: 37)
             .foregroundStyle(active ? BingeTheme.ground : (accent ? BingeTheme.accent : BingeTheme.ink))
             .background(active ? (accent ? BingeTheme.accent : BingeTheme.ink) : Color.clear)
             .overlay(Rectangle().stroke(accent ? BingeTheme.accent : BingeTheme.ink, lineWidth: 1))
