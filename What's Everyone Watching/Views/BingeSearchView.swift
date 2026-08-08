@@ -364,6 +364,8 @@ struct BingeSearchView: View {
     @Binding var tab: BingeTab
     @FocusState private var fieldFocused: Bool
     @Environment(\.scenePhase) var scenePhase
+    @State private var errorMessage: String?
+    @State private var showError = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -435,6 +437,11 @@ struct BingeSearchView: View {
                     engine.objectWillChange.send()
                 }
             }
+        }
+        .alert("Cannot Add to Watchlist", isPresented: $showError) {
+            Button("OK") { showError = false }
+        } message: {
+            Text(errorMessage ?? "")
         }
         .sheet(item: $engine.ratingTarget) { result in
             BingeRatingSheet(title: result.title,
@@ -524,15 +531,22 @@ struct BingeSearchView: View {
         let onList = engine.isOnWatchlist(result)
         let isPartial = engine.isPartiallyWatched(result)
         let isFull = engine.isFullyWatched(result)
+        let canAddToWatchlist = !isPartial && !isFull
         let watchlistTitle = onList ? "Added to\nWatchlist" : "Add to\nWatchlist"
         let watchedTitle = isFull ? "Watched" : (isPartial ? "Partially\nWatched" : "Mark as\nWatched")
         return VStack(spacing: 6) {
             Button {
-                Task { await engine.toggleWatchlist(result) }
+                if canAddToWatchlist || onList {
+                    Task { await engine.toggleWatchlist(result) }
+                } else {
+                    errorMessage = "Shows cannot be on the watchlist if they're already watched or partially watched."
+                    showError = true
+                }
             } label: {
                 rowAction(title: watchlistTitle, active: onList, accent: false)
             }
             .buttonStyle(.plain)
+            .opacity(canAddToWatchlist || onList ? 1.0 : 0.5)
 
             Button {
                 Task { await engine.toggleWatched(result) }
