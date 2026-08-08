@@ -58,6 +58,50 @@ final class BingeSearchEngine: ObservableObject {
 
     // MARK: Context
 
+    func refreshLibraryState() async {
+        guard let userId = supabase.currentUser?.id else { return }
+
+        // Refresh user shows and finished shows
+        if let mine = try? await supabase.fetchUserShows(userId: userId) {
+            libraryShows = Set(mine.map(\.showId))
+            finishedShows = Set(mine.filter { ($0.rating ?? 0) > 0 }.map(\.showId))
+        }
+
+        // Refresh episode counts for all library shows
+        let episodes = (try? await supabase.fetchUserEpisodes(userId: userId)) ?? []
+        var episodeCounts: [Int: (watched: Int, total: Int)] = [:]
+
+        for ep in episodes {
+            var counts = episodeCounts[ep.showId] ?? (0, 0)
+            if ep.watched {
+                counts.watched += 1
+            }
+            episodeCounts[ep.showId] = counts
+        }
+
+        // Fetch show info to get actual total episode counts
+        await withTaskGroup(of: (showId: Int, total: Int)?.self) { group in
+            for showId in episodeCounts.keys {
+                group.addTask {
+                    if let show = try? await self.supabase.fetchShowById(id: showId) {
+                        return (showId: showId, total: show.numberOfEpisodes)
+                    }
+                    return nil
+                }
+            }
+            for await result in group {
+                if let (showId, total) = result {
+                    var counts = episodeCounts[showId] ?? (0, 0)
+                    counts.total = total
+                    episodeCounts[showId] = counts
+                }
+            }
+        }
+
+        showEpisodeCounts = episodeCounts
+        objectWillChange.send()
+    }
+
     /// Everything the rows need to describe themselves. Loaded once when the tab opens.
     /// Uses cached data if available and <5 min old; otherwise refreshes from server.
     func primeContext() async {
@@ -550,7 +594,8 @@ struct BingeSearchView: View {
                 } else {
                     BingeShowDetailView(tmdbId: result.tmdbId,
                                     dbShowId: result.tmdbId,
-                                    title: result.title)
+                                    title: result.title,
+                                    searchEngine: engine)
                 }
             } label: {
                 HStack(alignment: .top, spacing: 12) {

@@ -16,6 +16,7 @@ struct BingeShowDetailView: View {
     let tmdbId: Int
     var dbShowId: Int? = nil
     let title: String
+    var searchEngine: BingeSearchEngine? = nil
 
     @StateObject private var tmdb = TMDBService.shared
     @StateObject private var supabase = SupabaseService.shared
@@ -33,7 +34,6 @@ struct BingeShowDetailView: View {
     @State private var showAbout = false
     @State private var showSeasonSheet = false
     @State private var showRatingSheet = false
-    @State private var confirmFinishShow = false
     @State private var hasLoaded = false
     @EnvironmentObject private var notificationManager: NotificationManager
     @EnvironmentObject private var youEngine: BingeYouEngine
@@ -106,11 +106,6 @@ struct BingeShowDetailView: View {
                 await load()
                 hasLoaded = true
             }
-        }
-        .confirmationDialog("Mark every episode as watched?",
-                            isPresented: $confirmFinishShow, titleVisibility: .visible) {
-            Button("Mark as watched") { Task { await finishShow() } }
-            Button("Cancel", role: .cancel) { }
         }
         .sheet(isPresented: $showSeasonSheet) {
             BingeSeasonSheet(seasons: seasons,
@@ -201,18 +196,31 @@ struct BingeShowDetailView: View {
     }
 
     private var actions: some View {
-        HStack(spacing: 10) {
-            Button { confirmFinishShow = true } label: {
+        let isFullyWatched = totalCount > 0 && watchedCount == totalCount
+        let isPartiallyWatched = totalCount > 0 && watchedCount > 0 && watchedCount < totalCount
+        let buttonText: String
+        if isWorking {
+            buttonText = "Working…"
+        } else if isFullyWatched {
+            buttonText = "Watched"
+        } else if isPartiallyWatched {
+            buttonText = "Partially\nWatched"
+        } else {
+            buttonText = "Mark as Watched"
+        }
+
+        return HStack(spacing: 10) {
+            Button { Task { await finishShow() } } label: {
                 HStack {
-                    Text(isWorking ? "Working…" : "Finish show")
+                    Text(buttonText)
                         .bingeLabel(12)
                     Spacer(minLength: 8)
                     Text("✓").bingeLabel(12)
                 }
                 .padding(.horizontal, 14)
                 .frame(maxWidth: .infinity, minHeight: BingeTheme.minTap, alignment: .leading)
-                .background(BingeTheme.accent)
-                .foregroundStyle(.white)
+                .foregroundStyle(isFullyWatched || isPartiallyWatched ? .white : .white)
+                .background(isFullyWatched || isPartiallyWatched ? BingeTheme.accent : BingeTheme.accent)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -440,6 +448,11 @@ struct BingeShowDetailView: View {
                 notificationManager.show("Moved to Saved")
                 youEngine.library.removeAll { $0.show.id == (dbShowId ?? tmdbId) }
             }
+
+            // Update search engine state if available
+            if let searchEngine = searchEngine {
+                await searchEngine.refreshLibraryState()
+            }
         } catch {
             if turningOn { watched.remove(ep.id) } else { watched.insert(ep.id) }
         }
@@ -568,7 +581,13 @@ struct BingeShowDetailView: View {
         _ = await (seasonOps, libraryOp)
 
         isWorking = false
-        showRatingSheet = true
+
+        // Update search engine state if available
+        if let searchEngine = searchEngine {
+            await searchEngine.refreshLibraryState()
+        }
+
+        if rating == nil { showRatingSheet = true }
     }
 
     private func setAllSeasons(watched on: Bool) async {
@@ -616,6 +635,12 @@ struct BingeShowDetailView: View {
 
         // One transition for the whole batch — not one per season.
         await syncLibraryMembership(wasEmpty: wasEmpty, userId: userId)
+
+        // Update search engine state if available
+        if let searchEngine = searchEngine {
+            await searchEngine.refreshLibraryState()
+        }
+
         isWorking = false
 
         if rating == nil && !on.isEmpty && fraction == 1.0 { showRatingSheet = true }
