@@ -16,7 +16,7 @@ class SupabaseService: NSObject, ObservableObject {
     private let tokenDefaultsKey = "authToken"
     private let refreshTokenDefaultsKey = "refreshToken"
     private let profileSetupKey = "profileSetupNeeded"
-    private var authToken: String = ""
+    var authToken: String = ""
     private var refreshToken: String = ""
     
     override private init() {
@@ -47,7 +47,7 @@ class SupabaseService: NSObject, ObservableObject {
         }
     }
     
-    private func saveSession(user: User, token: String, refreshToken: String = "") {
+    func saveSession(user: User, token: String, refreshToken: String = "") {
         print("Saving user to session: id='\(user.id)', email='\(user.email)'")
         if let encoded = try? JSONEncoder().encode(user) {
             UserDefaults.standard.set(encoded, forKey: userDefaultsKey)

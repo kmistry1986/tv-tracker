@@ -64,14 +64,16 @@ final class BingeSettingsEngine: ObservableObject {
                                                  isPublic: isPublic)
             try await supabase.saveUserPlatforms(userId: userId, platformIds: Array(selected))
 
-            // Update currentUser with new display name
+            // Update currentUser with new display name and persist to session
             if let user = supabase.currentUser {
-                supabase.currentUser = User(
+                let updated = User(
                     id: user.id,
                     email: user.email,
                     name: displayName.isEmpty ? user.email : displayName,
                     avatarUrl: user.avatarUrl
                 )
+                supabase.currentUser = updated
+                supabase.saveSession(user: updated, token: supabase.authToken)
             }
 
             message = "Saved."
