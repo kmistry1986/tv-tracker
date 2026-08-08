@@ -100,15 +100,17 @@ class SupabaseService: NSObject, ObservableObject {
         
         struct SignUpResponse: Decodable {
             let id: String
+            let access_token: String?
         }
-        
+
         let signupResponse = try JSONDecoder().decode(SignUpResponse.self, from: data)
         let userId = signupResponse.id
+        let accessToken = signupResponse.access_token ?? ""
         print("SignUp userId: \(userId)")
-        
+
         let user = User(id: userId, email: email, name: name, avatarUrl: nil)
 
-        self.authToken = ""
+        self.authToken = accessToken
         try await insertUser(user: user)
 
         DispatchQueue.main.async {
