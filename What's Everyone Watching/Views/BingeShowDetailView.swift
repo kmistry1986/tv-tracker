@@ -504,18 +504,33 @@ struct BingeShowDetailView: View {
         let hasWatched = !watched.isEmpty
 
         if hasWatched && wasEmpty {
+            // Optimistically update library before database operations complete
+            if let details = details {
+                let show = TVShow(id: dbShowId ?? tmdbId, tmdbId: tmdbId, title: details.name,
+                                overview: details.overview, posterUrl: details.imageUrl,
+                                firstAirDate: details.firstAirDate, numberOfSeasons: details.numberOfSeasons,
+                                numberOfEpisodes: details.numberOfEpisodes)
+                let item = BingeLibraryItem(id: dbShowId ?? tmdbId, show: show, rating: rating,
+                                          watchedDate: ISO8601DateFormatter().string(from: Date()),
+                                          isWatchlist: false, watchedEpisodes: watchedCount,
+                                          lastSeason: nil, lastEpisode: nil)
+                youEngine.library.removeAll { $0.show.id == (dbShowId ?? tmdbId) }
+                youEngine.library.append(item)
+            }
+
             async let move = supabase.moveWatchlistToLibrary(userId: userId, showId: dbShowId ?? tmdbId)
             async let remove = supabase.removeShowFromWatchlist(userId: userId, showId: dbShowId ?? tmdbId)
             _ = try? await (move, remove)
             isInLibrary = true
             notificationManager.show("Moved to Started")
-            youEngine.library.removeAll { $0.show.id == (dbShowId ?? tmdbId) }
         } else if !hasWatched && !wasEmpty {
+            // Optimistically remove from library before database operations complete
+            youEngine.library.removeAll { $0.show.id == (dbShowId ?? tmdbId) }
+
             try? await supabase.removeFromLibraryIfNoWatchedEpisodes(userId: userId, showId: dbShowId ?? tmdbId)
             try? await supabase.restoreToWatchlist(userId: userId, showId: dbShowId ?? tmdbId)
             isInLibrary = false
             notificationManager.show("Moved to Saved")
-            youEngine.library.removeAll { $0.show.id == (dbShowId ?? tmdbId) }
         }
     }
 
