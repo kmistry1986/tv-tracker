@@ -508,12 +508,13 @@ struct BingeSearchView: View {
         let onList = engine.isOnWatchlist(result)
         let isPartial = engine.isPartiallyWatched(result)
         let isFull = engine.isFullyWatched(result)
+        let watchlistTitle = onList ? "Added to\nWatchlist" : "Add to\nWatchlist"
         let watchedTitle = isPartial ? "Partially\nWatched" : "Mark as\nWatched"
         return VStack(spacing: 6) {
             Button {
                 Task { await engine.toggleWatchlist(result) }
             } label: {
-                rowAction(title: "Add to\nWatchlist", active: onList, accent: false)
+                rowAction(title: watchlistTitle, active: onList, accent: false)
             }
             .buttonStyle(.plain)
 
