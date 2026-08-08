@@ -49,6 +49,7 @@ final class BingeSearchEngine: ObservableObject {
     private var libraryShows: Set<Int> = []
     private var libraryMovies: Set<Int> = []
     private var finishedShows: Set<Int> = []
+    private var showEpisodeCounts: [Int: (watched: Int, total: Int)] = [:]
     private let supabase = SupabaseService.shared
     private var searchTask: Task<Void, Never>?
 
@@ -71,6 +72,26 @@ final class BingeSearchEngine: ObservableObject {
         if let wlm = try? await supabase.fetchWatchlistMovies(userId: userId) {
             watchlistMovies = Set(wlm.map(\.movieId))
             watchlistMovieRows = Dictionary(wlm.map { ($0.movieId, $0.id) }, uniquingKeysWith: { a, _ in a })
+        }
+
+        // Fetch episode counts to check if shows are fully watched
+        let episodes = (try? await supabase.fetchUserEpisodes(userId: userId)) ?? []
+        var episodeCounts: [Int: (watched: Int, total: Int)] = [:]
+        for ep in episodes {
+            var counts = episodeCounts[ep.showId] ?? (0, 0)
+            counts.total += 1
+            if ep.watched {
+                counts.watched += 1
+            }
+            episodeCounts[ep.showId] = counts
+        }
+        showEpisodeCounts = episodeCounts
+
+        // Update finishedShows to include shows with all episodes watched
+        for showId in libraryShows {
+            if let counts = episodeCounts[showId], counts.watched > 0 && counts.watched == counts.total {
+                finishedShows.insert(showId)
+            }
         }
 
         guard let friends = try? await supabase.fetchFriends(userId: userId) else { return }
