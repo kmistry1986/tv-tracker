@@ -123,6 +123,13 @@ struct BingeShowDetailView: View {
                 review = newReview
             }
         }
+        .onDisappear {
+            if let searchEngine = searchEngine {
+                Task {
+                    await searchEngine.refreshLibraryState()
+                }
+            }
+        }
     }
 
     // MARK: Chrome
@@ -170,7 +177,7 @@ struct BingeShowDetailView: View {
         var parts: [String] = []
         if let d = details {
             if let air = d.firstAirDate, air.count >= 4 { parts.append(String(air.prefix(4))) }
-            parts.append(d.displayStatus)
+            parts.append(d.displayType)
             if d.numberOfSeasons > 0 {
                 parts.append("\(d.numberOfSeasons) season\(d.numberOfSeasons == 1 ? "" : "s")")
             }
@@ -458,10 +465,6 @@ struct BingeShowDetailView: View {
                 youEngine.library.removeAll { $0.show.id == (dbShowId ?? tmdbId) }
             }
 
-            // Update search engine state if available
-            if let searchEngine = searchEngine {
-                await searchEngine.refreshLibraryState()
-            }
         } catch {
             if turningOn { watchedTmdbIds.remove(ep.id) } else { watchedTmdbIds.insert(ep.id) }
         }
@@ -523,7 +526,11 @@ struct BingeShowDetailView: View {
                                             showTitle: details?.name)
                         try? await supabase.insertEpisode(episode: episode)
                     } else {
-                        try? await supabase.updateEpisodeWatched(episodeId: ep.id, watched: false)
+                        try? await supabase.deleteEpisodeByCompositeKey(
+                            showId: tmdbId,
+                            seasonNumber: season,
+                            episodeNumber: ep.episodeNumber,
+                            userId: userId)
                     }
                 }
             }
@@ -566,9 +573,8 @@ struct BingeShowDetailView: View {
             youEngine.library.removeAll { $0.show.id == (dbShowId ?? tmdbId) }
 
             try? await supabase.removeFromLibraryIfNoWatchedEpisodes(userId: userId, showId: dbShowId ?? tmdbId)
-            try? await supabase.restoreToWatchlist(userId: userId, showId: dbShowId ?? tmdbId)
             isInLibrary = false
-            notificationManager.show("Moved to Saved")
+            notificationManager.show("Removed from Started")
         }
     }
 
@@ -592,16 +598,15 @@ struct BingeShowDetailView: View {
 
         // Run all backend operations concurrently
         async let seasonOps = setAllSeasons(watched: true)
-        async let libraryOp = updateLibraryStateForFinish(wasEmpty: wasEmpty, userId: userId)
+        async let libraryOp = syncLibraryMembership(wasEmpty: wasEmpty, userId: userId)
 
         _ = await (seasonOps, libraryOp)
 
-        isWorking = false
+        // Fetch episodes from database to get authoritative watched state
+        let rows = (try? await supabase.fetchEpisodes(showId: tmdbId, userId: userId)) ?? []
+        watchedTmdbIds = Set(rows.map { $0.tmdbId })
 
-        // Update search engine state if available
-        if let searchEngine = searchEngine {
-            await searchEngine.refreshLibraryState()
-        }
+        isWorking = false
 
         if rating == nil { showRatingSheet = true }
     }
@@ -615,7 +620,7 @@ struct BingeShowDetailView: View {
             for (season, episodes) in episodeData {
                 group.addTask {
                     for ep in episodes {
-                        let episode = Episode(id: ep.id, showId: tmdbId, tmdbId: ep.id,
+                        let episode = Episode(id: nil, showId: tmdbId, tmdbId: ep.id,
                                             seasonNumber: season, episodeNumber: ep.episodeNumber,
                                             name: ep.name, overview: ep.overview ?? "",
                                             airDate: ep.airDate, userId: userId,
@@ -628,13 +633,6 @@ struct BingeShowDetailView: View {
         }
     }
 
-    private func updateLibraryStateForFinish(wasEmpty: Bool, userId: String) async {
-        if wasEmpty && !isInLibrary {
-            async let move = supabase.moveWatchlistToLibrary(userId: userId, showId: dbShowId ?? tmdbId)
-            async let remove = supabase.removeShowFromWatchlist(userId: userId, showId: dbShowId ?? tmdbId)
-            _ = try? await (move, remove)
-        }
-    }
 
     private func applySeasons(on: [Int], off: [Int]) async {
         showSeasonSheet = false
@@ -647,15 +645,10 @@ struct BingeShowDetailView: View {
         for s in off { await writeSeason(s, watched: false, userId: userId) }
 
         let rows = (try? await supabase.fetchEpisodes(showId: tmdbId, userId: userId)) ?? []
-        watchedTmdbIds = Set(rows.filter { $0.watched }.compactMap { $0.tmdbId })
+        watchedTmdbIds = Set(rows.map { $0.tmdbId })
 
         // One transition for the whole batch — not one per season.
         await syncLibraryMembership(wasEmpty: wasEmpty, userId: userId)
-
-        // Update search engine state if available
-        if let searchEngine = searchEngine {
-            await searchEngine.refreshLibraryState()
-        }
 
         isWorking = false
 
@@ -672,13 +665,22 @@ struct BingeShowDetailView: View {
         await withTaskGroup(of: Void.self) { group in
             for ep in episodes {
                 group.addTask {
-                    let episode = Episode(id: ep.id, showId: tmdbId, tmdbId: ep.id,
-                                        seasonNumber: season, episodeNumber: ep.episodeNumber,
-                                        name: ep.name, overview: ep.overview ?? "",
-                                        airDate: ep.airDate, userId: userId,
-                                        watched: on, watchedAt: on ? ISO8601DateFormatter().string(from: Date()) : nil,
-                                        showTitle: showTitle)
-                    try? await supabase.insertEpisode(episode: episode)
+                    if on {
+                        let episode = Episode(id: nil, showId: tmdbId, tmdbId: ep.id,
+                                            seasonNumber: season, episodeNumber: ep.episodeNumber,
+                                            name: ep.name, overview: ep.overview ?? "",
+                                            airDate: ep.airDate, userId: userId,
+                                            watched: true, watchedAt: ISO8601DateFormatter().string(from: Date()),
+                                            showTitle: showTitle)
+                        try? await supabase.insertEpisode(episode: episode)
+                    } else {
+                        // Delete the episode row to mark as unwatched
+                        try? await supabase.deleteEpisodeByCompositeKey(
+                            showId: tmdbId,
+                            seasonNumber: season,
+                            episodeNumber: ep.episodeNumber,
+                            userId: userId)
+                    }
                 }
             }
         }

@@ -240,11 +240,17 @@ struct TVShowDetail: Decodable {
     let numberOfSeasons: Int
     let numberOfEpisodes: Int
     let status: String?
+    let type: String?
     let genres: [TVGenre]?
 
     var imageUrl: String? {
         guard let path = posterPath else { return nil }
         return "\(TMDBService.shared.imageBaseURL)\(path)"
+    }
+
+    var displayType: String {
+        guard let t = type, !t.isEmpty else { return "Series" }
+        return t == "Scripted" ? "Series" : t
     }
 
     var displayStatus: String {
@@ -264,6 +270,7 @@ struct TVShowDetail: Decodable {
         case numberOfSeasons = "number_of_seasons"
         case numberOfEpisodes = "number_of_episodes"
         case status
+        case type
         case genres
     }
 }

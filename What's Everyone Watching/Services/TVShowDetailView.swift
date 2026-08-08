@@ -117,7 +117,7 @@ struct TVShowDetailView: View {
                         .foregroundColor(.secondary)
                 }
 
-                Label(show.displayStatus, systemImage: "tv")
+                Label(show.displayType, systemImage: "tv")
                     .font(.caption)
                     .foregroundColor(.secondary)
 
