@@ -312,11 +312,19 @@ final class BingeSearchEngine: ObservableObject {
     }
 
     func isFullyWatched(_ result: BingeSearchResult) -> Bool {
-        !result.isMovie && finishedShows.contains(result.tmdbId)
+        guard !result.isMovie else { return false }
+        if let counts = showEpisodeCounts[result.tmdbId], counts.watched > 0 && counts.watched == counts.total {
+            return true
+        }
+        return finishedShows.contains(result.tmdbId)
     }
 
     func isPartiallyWatched(_ result: BingeSearchResult) -> Bool {
-        !result.isMovie && libraryShows.contains(result.tmdbId) && !finishedShows.contains(result.tmdbId)
+        guard !result.isMovie else { return false }
+        if let counts = showEpisodeCounts[result.tmdbId], counts.watched > 0 && counts.watched < counts.total {
+            return true
+        }
+        return false
     }
 
     func isOnWatchlist(_ result: BingeSearchResult) -> Bool {
