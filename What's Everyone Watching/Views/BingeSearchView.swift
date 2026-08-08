@@ -77,13 +77,22 @@ final class BingeSearchEngine: ObservableObject {
         // Fetch episode counts to check if shows are fully watched
         let episodes = (try? await supabase.fetchUserEpisodes(userId: userId)) ?? []
         var episodeCounts: [Int: (watched: Int, total: Int)] = [:]
+
         for ep in episodes {
             var counts = episodeCounts[ep.showId] ?? (0, 0)
-            counts.total += 1
             if ep.watched {
                 counts.watched += 1
             }
             episodeCounts[ep.showId] = counts
+        }
+
+        // Fetch show info to get actual total episode counts
+        for (showId, _) in episodeCounts {
+            if let show = try? await supabase.fetchShowById(id: showId) {
+                var counts = episodeCounts[showId] ?? (0, 0)
+                counts.total = show.numberOfEpisodes
+                episodeCounts[showId] = counts
+            }
         }
         showEpisodeCounts = episodeCounts
 
