@@ -216,6 +216,9 @@ final class BingeSearchEngine: ObservableObject {
                                         releaseDate: tmdbMovie.releaseDate)
                         try? await supabase.insertMovie(movie: movie)
                     }
+                    let today = ISO8601DateFormatter().string(from: Date())
+                    try await supabase.insertUserMovie(userId: userId, movieId: result.tmdbId, watchedDate: today)
+                    libraryMovies.insert(result.tmdbId)
                 } else {
                     if let tmdbShow = try? await TMDBService.shared.getTVShow(id: result.tmdbId) {
                         let show = TVShow(id: result.tmdbId, tmdbId: result.tmdbId, title: tmdbShow.name,
@@ -224,36 +227,26 @@ final class BingeSearchEngine: ObservableObject {
                                         numberOfEpisodes: tmdbShow.numberOfEpisodes)
                         try? await supabase.insertShow(show: show)
                     }
-                }
 
-                let today = ISO8601DateFormatter().string(from: Date())
-                if result.isMovie {
-                    try await supabase.insertUserMovie(userId: userId, movieId: result.tmdbId, watchedDate: today)
-                    libraryMovies.insert(result.tmdbId)
-                } else {
-                    try await supabase.insertUserShow(userId: userId, showId: result.tmdbId, watchedDate: today)
                     libraryShows.insert(result.tmdbId)
-                    finishedShows.insert(result.tmdbId)
-                    ratingTarget = result
                     objectWillChange.send()
 
-                    // Mark all episodes as watched in background
-                    Task {
-                        if let tmdbShow = try? await TMDBService.shared.getTVShow(id: result.tmdbId) {
-                            let watchedAt = ISO8601DateFormatter().string(from: Date())
-                            for season in 1...tmdbShow.numberOfSeasons {
-                                if let tmdbSeason = try? await TMDBService.shared.getTVSeason(showId: result.tmdbId, seasonNumber: season) {
-                                    for episode in tmdbSeason.episodes {
-                                        let ep = Episode(id: episode.id, showId: result.tmdbId, tmdbId: episode.id,
-                                                       seasonNumber: season, episodeNumber: episode.episodeNumber,
-                                                       name: episode.name, overview: episode.overview ?? "",
-                                                       airDate: episode.airDate, userId: userId,
-                                                       watched: true, watchedAt: watchedAt, showTitle: result.title)
-                                        try? await supabase.insertEpisode(episode: ep)
-                                    }
+                    // Mark all episodes as watched (don't insert into user_shows yet - let detail view or rating flow handle that)
+                    if let tmdbShow = try? await TMDBService.shared.getTVShow(id: result.tmdbId) {
+                        let watchedAt = ISO8601DateFormatter().string(from: Date())
+                        for season in 1...tmdbShow.numberOfSeasons {
+                            if let tmdbSeason = try? await TMDBService.shared.getTVSeason(showId: result.tmdbId, seasonNumber: season) {
+                                for episode in tmdbSeason.episodes {
+                                    let ep = Episode(id: episode.id, showId: result.tmdbId, tmdbId: episode.id,
+                                                   seasonNumber: season, episodeNumber: episode.episodeNumber,
+                                                   name: episode.name, overview: episode.overview ?? "",
+                                                   airDate: episode.airDate, userId: userId,
+                                                   watched: true, watchedAt: watchedAt, showTitle: result.title)
+                                    try? await supabase.insertEpisode(episode: ep)
                                 }
                             }
                         }
+                        ratingTarget = result
                     }
                     return
                 }
@@ -477,7 +470,6 @@ struct BingeSearchView: View {
         let onList = engine.isOnWatchlist(result)
         let isPartial = engine.isPartiallyWatched(result)
         let isFull = engine.isFullyWatched(result)
-        let watched = engine.isInLibrary(result)
         let watchedTitle = isPartial ? "Partially Watched" : "Watched"
         return VStack(spacing: 6) {
             Button {
