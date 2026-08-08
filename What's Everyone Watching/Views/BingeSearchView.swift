@@ -354,6 +354,7 @@ struct BingeSearchView: View {
     @ObservedObject var engine: BingeSearchEngine
     @Binding var tab: BingeTab
     @FocusState private var fieldFocused: Bool
+    @Environment(\.scenePhase) var scenePhase
 
     var body: some View {
         VStack(spacing: 0) {
@@ -413,11 +414,17 @@ struct BingeSearchView: View {
             }
         }
         .onAppear {
-            // Reload when returning from detail view navigation
             Task {
                 await engine.primeContext()
-                // Force results to re-render by triggering objectWillChange
                 engine.objectWillChange.send()
+            }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active && !engine.query.isEmpty {
+                Task {
+                    await engine.primeContext()
+                    engine.objectWillChange.send()
+                }
             }
         }
         .sheet(item: $engine.ratingTarget) { result in
