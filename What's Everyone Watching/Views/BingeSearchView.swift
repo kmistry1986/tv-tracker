@@ -231,7 +231,7 @@ final class BingeSearchEngine: ObservableObject {
                     libraryShows.insert(result.tmdbId)
                     objectWillChange.send()
 
-                    // Mark all episodes as watched (don't insert into user_shows yet - let detail view or rating flow handle that)
+                    // Mark all episodes as watched
                     if let tmdbShow = try? await TMDBService.shared.getTVShow(id: result.tmdbId) {
                         let watchedAt = ISO8601DateFormatter().string(from: Date())
                         for season in 1...tmdbShow.numberOfSeasons {
@@ -246,6 +246,7 @@ final class BingeSearchEngine: ObservableObject {
                                 }
                             }
                         }
+
                         ratingTarget = result
                     }
                     return
