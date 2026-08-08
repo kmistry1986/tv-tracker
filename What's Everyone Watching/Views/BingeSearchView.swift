@@ -496,12 +496,12 @@ struct BingeSearchView: View {
         let onList = engine.isOnWatchlist(result)
         let isPartial = engine.isPartiallyWatched(result)
         let isFull = engine.isFullyWatched(result)
-        let watchedTitle = isPartial ? "Partially Watched" : "Watched"
+        let watchedTitle = isPartial ? "Partially\nWatched" : "Mark as\nWatched"
         return VStack(spacing: 6) {
             Button {
                 Task { await engine.toggleWatchlist(result) }
             } label: {
-                rowAction(title: "Watchlist", active: onList, accent: false)
+                rowAction(title: "Add to\nWatchlist", active: onList, accent: false)
             }
             .buttonStyle(.plain)
 
@@ -518,6 +518,8 @@ struct BingeSearchView: View {
     private func rowAction(title: String, active: Bool, accent: Bool) -> some View {
         Text(title)
             .bingeLabel(9)
+            .lineLimit(2)
+            .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity, minHeight: 38)
             .foregroundStyle(active ? BingeTheme.ground : (accent ? BingeTheme.accent : BingeTheme.ink))
             .background(active ? (accent ? BingeTheme.accent : BingeTheme.ink) : Color.clear)
