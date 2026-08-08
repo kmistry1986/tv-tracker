@@ -414,7 +414,11 @@ struct BingeSearchView: View {
         }
         .onAppear {
             // Reload when returning from detail view navigation
-            Task { await engine.primeContext() }
+            Task {
+                await engine.primeContext()
+                // Force results to re-render by triggering objectWillChange
+                engine.objectWillChange.send()
+            }
         }
         .sheet(item: $engine.ratingTarget) { result in
             BingeRatingSheet(title: result.title,
