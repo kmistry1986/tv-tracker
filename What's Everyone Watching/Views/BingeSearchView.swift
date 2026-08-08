@@ -52,12 +52,19 @@ final class BingeSearchEngine: ObservableObject {
     @Published private(set) var showEpisodeCounts: [Int: (watched: Int, total: Int)] = [:]
     private let supabase = SupabaseService.shared
     private var searchTask: Task<Void, Never>?
+    private var lastPrimeTime: Date = Date.distantPast
+    private var pendingToggle: (result: BingeSearchResult, isWatchlist: Bool)? = nil
+    private var toggleDebounce: Task<Void, Never>? = nil
 
     // MARK: Context
 
     /// Everything the rows need to describe themselves. Loaded once when the tab opens.
+    /// Uses cached data if available and <5 min old; otherwise refreshes from server.
     func primeContext() async {
         guard let userId = supabase.currentUser?.id else { return }
+
+        let timeSinceLastPrime = Date().timeIntervalSince(lastPrimeTime)
+        let shouldRefresh = timeSinceLastPrime > 300 || showEpisodeCounts.isEmpty
 
         if let mine = try? await supabase.fetchUserShows(userId: userId) {
             libraryShows = Set(mine.map(\.showId))
@@ -74,42 +81,68 @@ final class BingeSearchEngine: ObservableObject {
             watchlistMovieRows = Dictionary(wlm.map { ($0.movieId, $0.id) }, uniquingKeysWith: { a, _ in a })
         }
 
-        // Fetch episode counts to check if shows are fully watched
-        let episodes = (try? await supabase.fetchUserEpisodes(userId: userId)) ?? []
-        var episodeCounts: [Int: (watched: Int, total: Int)] = [:]
+        // Only refresh episode counts if needed (>5 min old or empty)
+        if shouldRefresh {
+            let episodes = (try? await supabase.fetchUserEpisodes(userId: userId)) ?? []
+            var episodeCounts: [Int: (watched: Int, total: Int)] = [:]
 
-        for ep in episodes {
-            var counts = episodeCounts[ep.showId] ?? (0, 0)
-            if ep.watched {
-                counts.watched += 1
+            for ep in episodes {
+                var counts = episodeCounts[ep.showId] ?? (0, 0)
+                if ep.watched {
+                    counts.watched += 1
+                }
+                episodeCounts[ep.showId] = counts
             }
-            episodeCounts[ep.showId] = counts
-        }
 
-        // Fetch show info to get actual total episode counts
-        for (showId, _) in episodeCounts {
-            if let show = try? await supabase.fetchShowById(id: showId) {
-                var counts = episodeCounts[showId] ?? (0, 0)
-                counts.total = show.numberOfEpisodes
-                episodeCounts[showId] = counts
+            // Fetch show info to get actual total episode counts - parallelize all fetches
+            await withTaskGroup(of: (showId: Int, total: Int)?.self) { group in
+                for showId in episodeCounts.keys {
+                    group.addTask {
+                        if let show = try? await self.supabase.fetchShowById(id: showId) {
+                            return (showId: showId, total: show.numberOfEpisodes)
+                        }
+                        return nil
+                    }
+                }
+                for await result in group {
+                    if let (showId, total) = result {
+                        var counts = episodeCounts[showId] ?? (0, 0)
+                        counts.total = total
+                        episodeCounts[showId] = counts
+                    }
+                }
             }
-        }
-        showEpisodeCounts = episodeCounts
+            showEpisodeCounts = episodeCounts
 
-        // Update finishedShows to include shows with all episodes watched
-        for showId in libraryShows {
-            if let counts = episodeCounts[showId], counts.watched > 0 && counts.watched == counts.total {
-                finishedShows.insert(showId)
+            // Update finishedShows to include shows with all episodes watched
+            for showId in libraryShows {
+                if let counts = episodeCounts[showId], counts.watched > 0 && counts.watched == counts.total {
+                    finishedShows.insert(showId)
+                }
             }
+
+            lastPrimeTime = Date()
         }
 
         guard let friends = try? await supabase.fetchFriends(userId: userId) else { return }
         var counts: [Int: Int] = [:]
-        for friend in friends {
-            let rated = (try? await supabase.getFriendRatings(friendId: friend.id)) ?? []
-            for row in rated where (row.rating ?? 0) >= 4 {
-                counts[row.showId, default: 0] += 1
+
+        // Fetch all friend ratings in parallel
+        let allRatings = await withTaskGroup(of: [UserShow].self) { group in
+            for friend in friends {
+                group.addTask {
+                    (try? await self.supabase.getFriendRatings(friendId: friend.id)) ?? []
+                }
             }
+            var results: [UserShow] = []
+            for await ratings in group {
+                results.append(contentsOf: ratings)
+            }
+            return results
+        }
+
+        for row in allRatings where (row.rating ?? 0) >= 4 {
+            counts[row.showId, default: 0] += 1
         }
         friendsFinished = counts
     }
@@ -207,84 +240,99 @@ final class BingeSearchEngine: ObservableObject {
     // Tapping the section you're already in removes you from it.
 
     func toggleWatchlist(_ result: BingeSearchResult) async {
-        guard let userId = supabase.currentUser?.id else { return }
-        do {
-            if isOnWatchlist(result) {
-                try await removeFromWatchlist(result, userId: userId)
-            } else {
-                if isInLibrary(result) { try await removeFromLibrary(result, userId: userId) }
-                if result.isMovie {
-                    try await supabase.addToWatchlistMovie(userId: userId, movieId: result.tmdbId, priority: "high")
-                    watchlistMovies.insert(result.tmdbId)
-                    if let wlm = try? await supabase.fetchWatchlistMovies(userId: userId) {
-                        watchlistMovieRows = Dictionary(wlm.map { ($0.movieId, $0.id) }, uniquingKeysWith: { a, _ in a })
-                    }
-                } else {
-                    try await supabase.addToWatchlistShow(userId: userId, showId: result.tmdbId, priority: "high")
-                    watchlistShows.insert(result.tmdbId)
-                }
-            }
-            objectWillChange.send()
-        } catch {
-            errorMessage = "Couldn't update your watchlist."
+        pendingToggle = (result, true)
+        toggleDebounce?.cancel()
+        toggleDebounce = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            guard !Task.isCancelled else { return }
+            await self?.executePendingToggle()
         }
     }
 
     func toggleWatched(_ result: BingeSearchResult) async {
+        pendingToggle = (result, false)
+        toggleDebounce?.cancel()
+        toggleDebounce = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            guard !Task.isCancelled else { return }
+            await self?.executePendingToggle()
+        }
+    }
+
+    private func executePendingToggle() async {
+        guard let (result, isWatchlist) = pendingToggle else { return }
+        pendingToggle = nil
         guard let userId = supabase.currentUser?.id else { return }
+
         do {
-            if isInLibrary(result) {
-                try await removeFromLibrary(result, userId: userId)
-            } else {
-                if isOnWatchlist(result) { try await removeFromWatchlist(result, userId: userId) }
-
-                // Fetch and insert show/movie data first
-                if result.isMovie {
-                    if let tmdbMovie = try? await TMDBService.shared.getMovie(id: result.tmdbId) {
-                        let movie = Movie(id: result.tmdbId, tmdbId: result.tmdbId, title: tmdbMovie.title,
-                                        overview: tmdbMovie.overview, posterUrl: tmdbMovie.imageUrl,
-                                        releaseDate: tmdbMovie.releaseDate)
-                        try? await supabase.insertMovie(movie: movie)
-                    }
-                    let today = ISO8601DateFormatter().string(from: Date())
-                    try await supabase.insertUserMovie(userId: userId, movieId: result.tmdbId, watchedDate: today)
-                    libraryMovies.insert(result.tmdbId)
+            if isWatchlist {
+                if isOnWatchlist(result) {
+                    try await removeFromWatchlist(result, userId: userId)
                 } else {
-                    if let tmdbShow = try? await TMDBService.shared.getTVShow(id: result.tmdbId) {
-                        let show = TVShow(id: result.tmdbId, tmdbId: result.tmdbId, title: tmdbShow.name,
-                                        overview: tmdbShow.overview, posterUrl: tmdbShow.imageUrl,
-                                        firstAirDate: tmdbShow.firstAirDate, numberOfSeasons: tmdbShow.numberOfSeasons,
-                                        numberOfEpisodes: tmdbShow.numberOfEpisodes)
-                        try? await supabase.insertShow(show: show)
+                    if isInLibrary(result) { try await removeFromLibrary(result, userId: userId) }
+                    if result.isMovie {
+                        try await supabase.addToWatchlistMovie(userId: userId, movieId: result.tmdbId, priority: "high")
+                        watchlistMovies.insert(result.tmdbId)
+                        if let wlm = try? await supabase.fetchWatchlistMovies(userId: userId) {
+                            watchlistMovieRows = Dictionary(wlm.map { ($0.movieId, $0.id) }, uniquingKeysWith: { a, _ in a })
+                        }
+                    } else {
+                        try await supabase.addToWatchlistShow(userId: userId, showId: result.tmdbId, priority: "high")
+                        watchlistShows.insert(result.tmdbId)
                     }
+                }
+            } else {
+                if isInLibrary(result) {
+                    try await removeFromLibrary(result, userId: userId)
+                } else {
+                    if isOnWatchlist(result) { try await removeFromWatchlist(result, userId: userId) }
 
-                    libraryShows.insert(result.tmdbId)
-                    objectWillChange.send()
-
-                    // Mark all episodes as watched
-                    if let tmdbShow = try? await TMDBService.shared.getTVShow(id: result.tmdbId) {
-                        let watchedAt = ISO8601DateFormatter().string(from: Date())
-                        for season in 1...tmdbShow.numberOfSeasons {
-                            if let tmdbSeason = try? await TMDBService.shared.getTVSeason(showId: result.tmdbId, seasonNumber: season) {
-                                for episode in tmdbSeason.episodes {
-                                    let ep = Episode(id: episode.id, showId: result.tmdbId, tmdbId: episode.id,
-                                                   seasonNumber: season, episodeNumber: episode.episodeNumber,
-                                                   name: episode.name, overview: episode.overview ?? "",
-                                                   airDate: episode.airDate, userId: userId,
-                                                   watched: true, watchedAt: watchedAt, showTitle: result.title)
-                                    try? await supabase.insertEpisode(episode: ep)
-                                }
-                            }
+                    if result.isMovie {
+                        if let tmdbMovie = try? await TMDBService.shared.getMovie(id: result.tmdbId) {
+                            let movie = Movie(id: result.tmdbId, tmdbId: result.tmdbId, title: tmdbMovie.title,
+                                            overview: tmdbMovie.overview, posterUrl: tmdbMovie.imageUrl,
+                                            releaseDate: tmdbMovie.releaseDate)
+                            try? await supabase.insertMovie(movie: movie)
+                        }
+                        let today = ISO8601DateFormatter().string(from: Date())
+                        try await supabase.insertUserMovie(userId: userId, movieId: result.tmdbId, watchedDate: today)
+                        libraryMovies.insert(result.tmdbId)
+                    } else {
+                        if let tmdbShow = try? await TMDBService.shared.getTVShow(id: result.tmdbId) {
+                            let show = TVShow(id: result.tmdbId, tmdbId: result.tmdbId, title: tmdbShow.name,
+                                            overview: tmdbShow.overview, posterUrl: tmdbShow.imageUrl,
+                                            firstAirDate: tmdbShow.firstAirDate, numberOfSeasons: tmdbShow.numberOfSeasons,
+                                            numberOfEpisodes: tmdbShow.numberOfEpisodes)
+                            try? await supabase.insertShow(show: show)
                         }
 
-                        ratingTarget = result
+                        libraryShows.insert(result.tmdbId)
+                        objectWillChange.send()
+
+                        if let tmdbShow = try? await TMDBService.shared.getTVShow(id: result.tmdbId) {
+                            let watchedAt = ISO8601DateFormatter().string(from: Date())
+                            for season in 1...tmdbShow.numberOfSeasons {
+                                if let tmdbSeason = try? await TMDBService.shared.getTVSeason(showId: result.tmdbId, seasonNumber: season) {
+                                    for episode in tmdbSeason.episodes {
+                                        let ep = Episode(id: episode.id, showId: result.tmdbId, tmdbId: episode.id,
+                                                       seasonNumber: season, episodeNumber: episode.episodeNumber,
+                                                       name: episode.name, overview: episode.overview ?? "",
+                                                       airDate: episode.airDate, userId: userId,
+                                                       watched: true, watchedAt: watchedAt, showTitle: result.title)
+                                        try? await supabase.insertEpisode(episode: ep)
+                                    }
+                                }
+                            }
+
+                            ratingTarget = result
+                        }
+                        return
                     }
-                    return
                 }
             }
             objectWillChange.send()
         } catch {
-            errorMessage = "Couldn't update what you've watched."
+            errorMessage = isWatchlist ? "Couldn't update your watchlist." : "Couldn't update what you've watched."
         }
     }
 

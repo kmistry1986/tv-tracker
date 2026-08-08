@@ -99,25 +99,42 @@ final class BingeYouEngine: ObservableObject {
         var built: [BingeLibraryItem] = []
         var seenShowIds = Set<Int>()
 
-        for row in shows {
-            guard let show = try? await supabase.fetchShowById(id: row.showId) else { continue }
-            seenShowIds.insert(row.showId)
-            built.append(BingeLibraryItem(id: row.id, show: show, rating: row.rating,
-                                          watchedDate: row.watchedDate, isWatchlist: false,
-                                          watchedEpisodes: counts[row.showId] ?? 0,
-                                          lastSeason: latest[row.showId]?.0,
-                                          lastEpisode: latest[row.showId]?.1))
+        // Fetch all shows concurrently
+        await withTaskGroup(of: (row: UserShow, show: TVShow)?.self) { group in
+            for row in shows {
+                group.addTask {
+                    guard let show = try? await self.supabase.fetchShowById(id: row.showId) else { return nil }
+                    return (row, show)
+                }
+            }
+            for await result in group {
+                guard let (row, show) = result else { continue }
+                seenShowIds.insert(row.showId)
+                built.append(BingeLibraryItem(id: row.id, show: show, rating: row.rating,
+                                              watchedDate: row.watchedDate, isWatchlist: false,
+                                              watchedEpisodes: counts[row.showId] ?? 0,
+                                              lastSeason: latest[row.showId]?.0,
+                                              lastEpisode: latest[row.showId]?.1))
+            }
         }
 
         // Add shows with watched episodes that aren't in user_shows yet
-        for (showId, watchedCount) in counts {
-            guard !seenShowIds.contains(showId) else { continue }
-            guard let show = try? await supabase.fetchShowById(id: showId) else { continue }
-            built.append(BingeLibraryItem(id: showId, show: show, rating: nil,
-                                          watchedDate: nil, isWatchlist: false,
-                                          watchedEpisodes: watchedCount,
-                                          lastSeason: latest[showId]?.0,
-                                          lastEpisode: latest[showId]?.1))
+        await withTaskGroup(of: (showId: Int, show: TVShow)?.self) { group in
+            for (showId, _) in counts {
+                guard !seenShowIds.contains(showId) else { continue }
+                group.addTask {
+                    guard let show = try? await self.supabase.fetchShowById(id: showId) else { return nil }
+                    return (showId, show)
+                }
+            }
+            for await result in group {
+                guard let (showId, show) = result else { continue }
+                built.append(BingeLibraryItem(id: showId, show: show, rating: nil,
+                                              watchedDate: nil, isWatchlist: false,
+                                              watchedEpisodes: counts[showId] ?? 0,
+                                              lastSeason: latest[showId]?.0,
+                                              lastEpisode: latest[showId]?.1))
+            }
         }
 
         library = built.sorted { $0.progress > $1.progress }
@@ -302,7 +319,10 @@ struct BingeYouView: View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 if engine.isLoading && items.isEmpty {
-                    ProgressView().tint(BingeTheme.accent).padding(.vertical, 40)
+                    ForEach(0..<4, id: \.self) { _ in
+                        skeletonRow
+                        BingeRule()
+                    }
                 } else if items.isEmpty {
                     BingeArgumentBlock(kicker: emptyKicker,
                                        headline: emptyHeadline,
@@ -333,6 +353,27 @@ struct BingeYouView: View {
                 }
             }
         }
+    }
+
+    private var skeletonRow: some View {
+        HStack(spacing: 14) {
+            Rectangle()
+                .fill(BingeTheme.hairline)
+                .frame(width: 56, height: 80)
+                .cornerRadius(4)
+            VStack(alignment: .leading, spacing: 8) {
+                Rectangle()
+                    .fill(BingeTheme.hairline)
+                    .frame(height: 16)
+                    .frame(maxWidth: 140)
+                Rectangle()
+                    .fill(BingeTheme.hairline)
+                    .frame(height: 12)
+                    .frame(maxWidth: 100)
+            }
+            Spacer(minLength: 84)
+        }
+        .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 16)
     }
 
     private func row(_ item: BingeLibraryItem) -> some View {

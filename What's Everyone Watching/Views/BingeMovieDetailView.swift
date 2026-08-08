@@ -173,6 +173,9 @@ struct BingeMovieDetailView: View {
             let d = try await tmdb.getMovie(id: tmdbId)
             details = d
 
+            // Refresh watch providers from TMDB
+            _ = try? await tmdb.getMovieWatchProviders(movieId: tmdbId)
+
             let userMovies = (try? await supabase.fetchUserMovies(userId: userId)) ?? []
             if let userMovie = userMovies.first(where: { $0.movieId == (dbMovieId ?? tmdbId) }) {
                 rating = userMovie.rating

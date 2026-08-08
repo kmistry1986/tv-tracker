@@ -109,8 +109,7 @@ struct BingeShowDetailView: View {
         }
         .confirmationDialog("Mark every episode as watched?",
                             isPresented: $confirmFinishShow, titleVisibility: .visible) {
-            Button("Finish the show") { Task { await finishShow(thenRate: false) } }
-            Button("Finish and rate it") { Task { await finishShow(thenRate: true) } }
+            Button("Mark as watched") { Task { await finishShow() } }
             Button("Cancel", role: .cancel) { }
         }
         .sheet(isPresented: $showSeasonSheet) {
@@ -375,11 +374,27 @@ struct BingeShowDetailView: View {
             let list = d.numberOfSeasons > 0 ? Array(1...d.numberOfSeasons) : []
             seasons = list
             if !list.contains(selectedSeason) { selectedSeason = list.first ?? 1 }
-            for s in list {
-                if let season = try? await tmdb.getTVSeason(showId: tmdbId, seasonNumber: s) {
-                    episodesBySeason[s] = season.episodes
+
+            // Fetch all seasons and watch providers in parallel
+            await withTaskGroup(of: (seasonNumber: Int, episodes: [EpisodeDetail])?.self) { group in
+                for s in list {
+                    group.addTask {
+                        if let season = try? await self.tmdb.getTVSeason(showId: self.tmdbId, seasonNumber: s) {
+                            return (seasonNumber: s, episodes: season.episodes)
+                        }
+                        return nil
+                    }
+                }
+                for await result in group {
+                    if let (seasonNumber, episodes) = result {
+                        episodesBySeason[seasonNumber] = episodes
+                    }
                 }
             }
+
+            // Refresh watch providers from TMDB
+            _ = try? await tmdb.getTVWatchProviders(tvId: tmdbId)
+
             let rows = (try? await supabase.fetchEpisodes(showId: tmdbId, userId: userId)) ?? []
             watched = Set(rows.filter { $0.watched }.map { $0.id })
 
@@ -451,12 +466,6 @@ struct BingeShowDetailView: View {
             _ = try await (move, remove)
         } else if !turningOn && watched.isEmpty {
             try await supabase.removeFromLibraryIfNoWatchedEpisodes(userId: userId, showId: dbShowId ?? tmdbId)
-            // Add back to watchlist — force insert regardless of current state
-            do {
-                try await supabase.restoreToWatchlist(userId: userId, showId: dbShowId ?? tmdbId)
-            } catch {
-                print("Failed to restore show to watchlist: \(error)")
-            }
         }
     }
 
@@ -534,7 +543,7 @@ struct BingeShowDetailView: View {
         }
     }
 
-    private func finishShow(thenRate: Bool) async {
+    private func finishShow() async {
         guard let userId = supabase.currentUser?.id else { return }
         isWorking = true
 
@@ -559,7 +568,7 @@ struct BingeShowDetailView: View {
         _ = await (seasonOps, libraryOp)
 
         isWorking = false
-        if thenRate || rating == nil { showRatingSheet = true }
+        showRatingSheet = true
     }
 
     private func setAllSeasons(watched on: Bool) async {

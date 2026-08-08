@@ -272,6 +272,7 @@ struct BingeStatRow: View {
 
 // MARK: - Poster
 // Takes your TMDB poster_url string directly. Never rounded, never tinted.
+// Uses progressive loading: low-res placeholder → full resolution.
 
 struct BingePoster: View {
     let urlString: String?
@@ -280,17 +281,40 @@ struct BingePoster: View {
     var cropAnchor: Alignment = .center
     var accessibilityTitle: String? = nil
 
+    @State private var isLoaded = false
+
     private var url: URL? {
         guard let s = urlString, !s.isEmpty else { return nil }
         return URL(string: s)
     }
 
+    private var lowResUrl: URL? {
+        guard let s = urlString, !s.isEmpty else { return nil }
+        let lowRes = s.replacingOccurrences(of: "/w500/", with: "/w92/")
+        return URL(string: lowRes)
+    }
+
     var body: some View {
-        AsyncImage(url: url) { phase in
-            switch phase {
-            case .success(let img): img.resizable().scaledToFill()
-            default: BingeTheme.inkFaint
+        ZStack {
+            AsyncImage(url: lowResUrl) { phase in
+                switch phase {
+                case .success(let img): img.resizable().scaledToFill()
+                default: BingeTheme.inkFaint
+                }
             }
+            .opacity(isLoaded ? 0 : 1)
+
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let img):
+                    img.resizable().scaledToFill()
+                        .onAppear { isLoaded = true }
+                default:
+                    if !isLoaded { Color.clear }
+                }
+            }
+            .opacity(isLoaded ? 1 : 0)
+            .animation(.easeIn(duration: 0.15), value: isLoaded)
         }
         .frame(width: width, height: height, alignment: cropAnchor)
         .frame(maxWidth: width == nil ? .infinity : nil,
