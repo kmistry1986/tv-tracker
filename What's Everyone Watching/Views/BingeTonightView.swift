@@ -343,7 +343,8 @@ struct BingeTonightView: View {
     }
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 9) {
+            BingeMark(height: 15, onDark: true)
             Text(weekday).bingeLabel(13).foregroundStyle(BingeTheme.accentTint)
             Spacer()
             Text(engine.friends.isEmpty ? "0 friends yet" : "\(engine.friends.count) friends")

@@ -17,6 +17,8 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject var supabase: SupabaseService
+    @State private var showLaunch = true
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     var body: some View {
         ZStack {
@@ -32,9 +34,21 @@ struct RootView: View {
                 AuthView()
                     .environmentObject(supabase)
             }
+
+            if showLaunch {
+                BingeLaunchView()
+                    .transition(.opacity)
+            }
         }
         .task {
             await StreamingPlatformMapper.loadPlatforms()
+
+            // Keep launch screen visible for ~0.9s or until auth resolves
+            try? await Task.sleep(nanoseconds: 900_000_000)
+
+            withAnimation(reduceMotion ? .none : .easeInOut(duration: 0.3)) {
+                showLaunch = false
+            }
         }
     }
 }

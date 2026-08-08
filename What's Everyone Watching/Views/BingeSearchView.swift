@@ -644,12 +644,26 @@ struct BingeSearchView: View {
             .buttonStyle(.plain)
             .opacity(canAddToWatchlist || onList ? 1.0 : 0.5)
 
-            Button {
-                Task { await engine.toggleWatched(result) }
-            } label: {
-                rowAction(title: watchedTitle, active: isPartial || isFull, accent: true)
+            Group {
+                if isPartial && !result.isMovie {
+                    NavigationLink {
+                        BingeShowDetailView(tmdbId: result.tmdbId,
+                                        dbShowId: result.tmdbId,
+                                        title: result.title,
+                                        searchEngine: engine)
+                    } label: {
+                        rowAction(title: watchedTitle, active: isPartial || isFull, accent: true)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button {
+                        Task { await engine.toggleWatched(result) }
+                    } label: {
+                        rowAction(title: watchedTitle, active: isPartial || isFull, accent: true)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .buttonStyle(.plain)
         }
         .frame(width: 104)
     }

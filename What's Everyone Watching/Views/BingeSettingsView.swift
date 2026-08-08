@@ -19,7 +19,6 @@ final class BingeSettingsEngine: ObservableObject {
     @Published var isSaving = false
     @Published var message: String?
     @Published var showClearConfirm = false
-    @Published var isReconciling = false
 
     private let supabase = SupabaseService.shared
 
@@ -38,15 +37,6 @@ final class BingeSettingsEngine: ObservableObject {
 
         platforms = (try? await supabase.getStreamingPlatforms()) ?? []
         selected = Set((try? await supabase.getUserPlatforms(userId: userId)) ?? [])
-
-        // Merge Max into HBO Max if both exist
-        try? await supabase.mergeMaxIntoHBOMax()
-
-        // Clean up orphaned watchlist entries
-        try? await supabase.cleanupOrphanedWatchlist()
-
-        // Remove shows from watchlist if they're also in library
-        try? await supabase.removeDuplicatesFromWatchlist()
     }
 
     func toggle(_ id: Int) {
@@ -63,19 +53,6 @@ final class BingeSettingsEngine: ObservableObject {
                                                  bio: bio.isEmpty ? nil : bio,
                                                  isPublic: isPublic)
             try await supabase.saveUserPlatforms(userId: userId, platformIds: Array(selected))
-
-            // Update currentUser with new display name and persist to session
-            if let user = supabase.currentUser {
-                let updated = User(
-                    id: user.id,
-                    email: user.email,
-                    name: displayName.isEmpty ? user.email : displayName,
-                    avatarUrl: user.avatarUrl
-                )
-                supabase.currentUser = updated
-                supabase.saveSession(user: updated, token: supabase.authToken)
-            }
-
             message = "Saved."
         } catch {
             message = error.localizedDescription
@@ -92,13 +69,6 @@ final class BingeSettingsEngine: ObservableObject {
     }
 
     func signOut() { supabase.signOut() }
-
-    func reconcile() async {
-        isReconciling = true
-        defer { isReconciling = false }
-        await supabase.reconcileWatchlistWithTables()
-        message = "Reconciliation complete."
-    }
 }
 
 struct BingeSettingsView: View {
@@ -110,6 +80,8 @@ struct BingeSettingsView: View {
             HStack(alignment: .lastTextBaseline) {
                 Text("Settings").bingeDisplay(34)
                 Spacer()
+                BingeWordmark(size: 15)
+                    .padding(.trailing, 12)
                 Button { dismiss() } label: {
                     Text("Done").bingeLabel(11).foregroundStyle(BingeTheme.accent)
                         .padding(.vertical, 10).contentShape(Rectangle())
@@ -261,9 +233,6 @@ struct BingeSettingsView: View {
                 HStack(spacing: 8) {
                     BingeChip(title: "Clear history", muted: true) {
                         engine.showClearConfirm = true
-                    }
-                    BingeChip(title: "Reconcile watchlist", muted: true) {
-                        Task { await engine.reconcile() }
                     }
                     BingeChip(title: "Sign out") { engine.signOut() }
                 }
