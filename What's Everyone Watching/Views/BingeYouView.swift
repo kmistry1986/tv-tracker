@@ -25,6 +25,32 @@ struct BingeLibraryItem: Identifiable {
 
     var totalEpisodes: Int { show.numberOfEpisodes }
 
+    /// The one service you'd actually open. `platforms` holds every provider
+    /// TMDB knows about including buy/rent, which isn't what "where is this"
+    /// means — subscription first, and only fall back to a paid option if a
+    /// title is nowhere else.
+    var platform: String? {
+        guard let all = show.platforms, !all.isEmpty else { return nil }
+        let pick = all.first { $0.type == "streaming" }
+            ?? all.first { $0.type == "free" }
+            ?? all.first
+        guard let name = pick?.name else { return nil }
+        return BingeLibraryItem.shortPlatform(name)
+    }
+
+    /// Provider names are marketing names, not labels — "Amazon Prime Video"
+    /// eats a meta line on its own.
+    static func shortPlatform(_ name: String) -> String {
+        if name.contains("Amazon Prime") { return "Prime" }
+        if name.contains("Apple TV")     { return "Apple TV+" }
+        if name.contains("HBO") || name == "Max" { return "Max" }
+        if name.contains("Disney")       { return "Disney+" }
+        if name.contains("Paramount")    { return "Paramount+" }
+        if name.contains("Peacock")      { return "Peacock" }
+        if name.contains("Netflix")      { return "Netflix" }
+        return name
+    }
+
     var isFinished: Bool {
         if totalEpisodes > 0 && watchedEpisodes >= totalEpisodes { return true }
         return rating != nil && watchedEpisodes == 0
@@ -35,6 +61,14 @@ struct BingeLibraryItem: Identifiable {
     var progress: Double {
         guard totalEpisodes > 0 else { return 0 }
         return min(1, Double(watchedEpisodes) / Double(totalEpisodes))
+    }
+
+    /// A single comparable "how much is this" — minutes for a film, episodes
+    /// scaled to roughly the same order for a series, so Longest / Shortest
+    /// can rank a mixed list without pretending the units are the same.
+    var lengthUnits: Int {
+        if isMovie { return runtimeMinutes ?? 0 }
+        return totalEpisodes * 42
     }
 
     /// "S5 E1 · 46 of 62" when we know where they are, else a title meta line.
@@ -49,6 +83,7 @@ struct BingeLibraryItem: Identifiable {
             if totalEpisodes > 0 { parts.append("\(totalEpisodes) eps") }
             if let rating { parts.append("Rated \(rating)") }
         }
+        if let platform { parts.append(platform) }
         return parts.isEmpty ? "Series" : parts.joined(separator: " · ")
     }
 
@@ -57,15 +92,26 @@ struct BingeLibraryItem: Identifiable {
     /// rather than inferred from the unit.
     /// Movies read plain "Film" until SupabaseService gains a fetchMovieById
     /// that can supply a real runtime.
-    var finishedMeta: String {
+    /// Finished rows state facts about the title, not progress — there is none
+    /// left. Split across two lines: what it is and where it lives, then how
+    /// much of it there is. Kind first, so a series and a film are told apart
+    /// at a glance rather than inferred from the unit.
+    var kindLine: String {
+        var parts = [isMovie ? "Film" : "Series"]
+        // Omitted rather than stubbed when unknown — the line just ends short.
+        if let platform { parts.append(platform) }
+        return parts.joined(separator: " · ")
+    }
+
+    var lengthLine: String? {
         if isMovie {
-            guard let mins = runtimeMinutes, mins > 0 else { return "Film" }
+            guard let mins = runtimeMinutes, mins > 0 else { return nil }
             let h = mins / 60, m = mins % 60
-            if h == 0 { return "Film · \(m)m" }
-            return m == 0 ? "Film · \(h)h" : "Film · \(h)h \(m)m"
+            if h == 0 { return "\(m)m" }
+            return m == 0 ? "\(h)h" : "\(h)h \(m)m"
         }
-        guard totalEpisodes > 0 else { return "Series" }
-        return "Series · \(totalEpisodes) episode\(totalEpisodes == 1 ? "" : "s")"
+        guard totalEpisodes > 0 else { return nil }
+        return "\(totalEpisodes) episode\(totalEpisodes == 1 ? "" : "s")"
     }
 }
 
@@ -185,6 +231,74 @@ final class BingeYouEngine: ObservableObject {
     }
 }
 
+/// A wrapping row of chips. The platform set is short and variable, so it
+/// needs to wrap rather than scroll — a chip you can't see is a chip nobody taps.
+struct BingeFlowGrid<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 88), spacing: 7, alignment: .leading)],
+                  alignment: .leading, spacing: 7) {
+            content
+        }
+    }
+}
+
+/// A leading swipe that reveals one action. The library list is a LazyVStack,
+/// not a List, so `.swipeActions` isn't available — this is the same gesture
+/// hand-built, and it stays out of the row's layout entirely so nothing about
+/// the row's height or width changes.
+struct BingeSwipeRow<Content: View>: View {
+    let shareText: String
+    @ViewBuilder var content: Content
+
+    @State private var offset: CGFloat = 0
+    @State private var committed: CGFloat = 0
+
+    private let width: CGFloat = 76
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            ShareLink(item: shareText) {
+                VStack(spacing: 7) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 18, weight: .medium))
+                    Text("Share").bingeLabel(9)
+                }
+                .foregroundStyle(BingeTheme.ground)
+                .frame(width: width)
+                .frame(maxHeight: .infinity)
+                .background(BingeTheme.ink)
+                .contentShape(Rectangle())
+            }
+            .simultaneousGesture(TapGesture().onEnded { close() })
+            .opacity(offset > 1 ? 1 : 0)
+
+            content
+                .background(BingeTheme.ground)
+                .offset(x: offset)
+                .gesture(
+                    DragGesture(minimumDistance: 14)
+                        .onChanged { value in
+                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                            offset = min(width * 1.2, max(0, committed + value.translation.width))
+                        }
+                        .onEnded { value in
+                            let open = value.translation.width > width * 0.4 || offset > width * 0.7
+                            withAnimation(.snappy(duration: 0.22)) {
+                                offset = open ? width : 0
+                                committed = offset
+                            }
+                        }
+                )
+        }
+        .clipped()
+    }
+
+    private func close() {
+        withAnimation(.snappy(duration: 0.22)) { offset = 0; committed = 0 }
+    }
+}
+
 struct BingeYouView: View {
     @EnvironmentObject private var supabase: SupabaseService
     @EnvironmentObject private var notificationManager: NotificationManager
@@ -194,6 +308,15 @@ struct BingeYouView: View {
     @State private var showSettings = false
     @State private var showImport = false
     @State private var ratingTarget: BingeLibraryItem?
+    @State private var showFilters = false
+    /// 0 all · 1 shows · 2 films — a property of the title, so it holds across sections.
+    @State private var kindFilter = 0
+    /// 0 all · 1 rated · 2 unrated — only applied on Finished.
+    @State private var rateFilter = 0
+    /// nil = every service. Chips are built from the library, never a fixed list.
+    @State private var platformFilter: String? = nil
+    /// Index into `sortOptions`, which changes with the section.
+    @State private var sortMode = 0
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -203,6 +326,7 @@ struct BingeYouView: View {
 
                 statSwitch
                 BingeRule(strong: true)
+                filterSummaryLine
 
                 list
             }
@@ -214,6 +338,10 @@ struct BingeYouView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) { BingeTabBar(selection: $tab) }
             .sheet(isPresented: $showSettings) { BingeSettingsView() }
             .sheet(isPresented: $showImport) { ImportManagementView() }
+            .sheet(isPresented: $showFilters) { filterSheet }
+            // Sort options differ per section, so an index doesn't survive the
+            // switch; filters are properties of the title and do.
+            .onChange(of: section) { _ in sortMode = 0 }
             .sheet(item: $ratingTarget) { item in
                 BingeRatingSheet(title: item.show.title,
                                  posterUrl: item.show.posterUrl,
@@ -302,8 +430,283 @@ struct BingeYouView: View {
             statCell("\(engine.watchlist.count)", "Saved", index: 1)
             BingeVRule()
             statCell("\(engine.finished.count)", "Finished", index: 2)
+            BingeVRule(onDark: section == 2)
+
+            // Trailing controls live inside the switch — the page already has one
+            // filter row and doesn't get a second strip.
+            Button { showFilters = true } label: {
+                VStack(spacing: 3) {
+                    Text("Filter").bingeLabel(9)
+                        .foregroundStyle(activeFilterCount > 0 ? BingeTheme.accent : BingeTheme.inkMuted)
+                    if activeFilterCount > 0 {
+                        Text("· \(activeFilterCount) ·").bingeLabel(9)
+                            .foregroundStyle(BingeTheme.accent)
+                    }
+                }
+                .frame(width: 58)
+                .frame(maxHeight: .infinity)
+                .background(BingeTheme.ground)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(activeFilterCount > 0 ? "Filter, \(activeFilterCount) active" : "Filter")
+
+            if section == 2 && !engine.finished.isEmpty {
+                BingeVRule()
+                ShareLink(item: finishedShareText) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(BingeTheme.ink)
+                        .frame(width: 46)
+                        .frame(maxHeight: .infinity)
+                        .background(BingeTheme.ground)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Share what you've finished")
+            }
         }
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// A plain-text list for the iOS share sheet — reads as something a person
+    /// would actually paste into a message.
+    private var finishedShareText: String {
+        let lines = engine.finished.prefix(40).map { item -> String in
+            if let r = item.rating, r > 0 {
+                return "\(item.show.title) — \(String(repeating: "★", count: r))"
+            }
+            return item.show.title
+        }
+        return (["What I've finished", ""] + lines).joined(separator: "\n")
+    }
+
+    /// What one title reads like when it lands in a message — the same voice as
+    /// the whole-list share, one line long.
+    private func shareText(for item: BingeLibraryItem) -> String {
+        var line = item.show.title
+        if let r = item.rating, r > 0 {
+            line += " — \(String(repeating: "★", count: r))"
+        }
+        if let platform = item.platform { line += " (\(platform))" }
+        return line
+    }
+
+    /// Every facet is offered on every section — a control that appears and
+    /// disappears as you switch tabs is harder to trust than one that's simply
+    /// there. Rating still only has anything to match on Finished.
+    private var ratingFilterApplies: Bool { true }
+
+    private var activeFilterCount: Int {
+        (kindFilter == 0 ? 0 : 1)
+        + (ratingFilterApplies && rateFilter != 0 ? 1 : 0)
+        + (platformFilter == nil ? 0 : 1)
+    }
+
+    private func clearFilters() {
+        kindFilter = 0; rateFilter = 0; platformFilter = nil
+    }
+
+    private var filterSummary: String {
+        var parts: [String] = []
+        if kindFilter == 1 { parts.append("Shows") }
+        if kindFilter == 2 { parts.append("Films") }
+        if ratingFilterApplies && rateFilter == 1 { parts.append("Rated") }
+        if ratingFilterApplies && rateFilter == 2 { parts.append("Unrated") }
+        if let platformFilter { parts.append(platformFilter) }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Built from what's actually in this section, so a chip can never return
+    /// an empty list. Ordered by how much of the library sits on each service.
+    private var libraryPlatforms: [String] {
+        var counts: [String: Int] = [:]
+        for item in sectionItems {
+            if let name = item.platform {
+                let current: Int = counts[name] ?? 0
+                counts[name] = current + 1
+            }
+        }
+        let names: [String] = Array(counts.keys)
+        return names.sorted { a, b in
+            let ca: Int = counts[a] ?? 0
+            let cb: Int = counts[b] ?? 0
+            if ca == cb { return a < b }
+            return ca > cb
+        }
+    }
+
+    // MARK: Sort
+
+    /// The one control that genuinely differs per section — "Highest rated"
+    /// means nothing on Saved, "Furthest along" means nothing on Finished.
+    private var sortOptions: [String] {
+        switch section {
+        case 1:  return ["Recently added", "Shortest first", "Title A–Z"]
+        case 2:  return ["Recently finished", "Highest rated", "Longest", "Title A–Z"]
+        default: return ["Furthest along", "Recently watched", "Title A–Z"]
+        }
+    }
+
+    private var sortLabel: String { sortOptions[min(sortMode, sortOptions.count - 1)] }
+
+    private func applySort(_ list: [BingeLibraryItem]) -> [BingeLibraryItem] {
+        switch sortLabel {
+        case "Title A–Z":
+            return list.sorted { $0.show.title.localizedStandardCompare($1.show.title) == .orderedAscending }
+        case "Highest rated":
+            return list.sorted {
+                ($0.rating ?? 0) == ($1.rating ?? 0)
+                ? $0.show.title.localizedStandardCompare($1.show.title) == .orderedAscending
+                : ($0.rating ?? 0) > ($1.rating ?? 0)
+            }
+        case "Longest":       return list.sorted { $0.lengthUnits > $1.lengthUnits }
+        case "Shortest first":return list.sorted { $0.lengthUnits < $1.lengthUnits }
+        case "Furthest along":return list.sorted { $0.progress > $1.progress }
+        default:
+            // Recently finished / watched / added — all newest first.
+            return list.sorted { ($0.watchedDate ?? "") > ($1.watchedDate ?? "") }
+        }
+    }
+
+    // MARK: Sort & filter sheet
+
+    private var filterSheet: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Sort & filter").bingeDisplay(28)
+                Spacer()
+                if activeFilterCount > 0 {
+                    Button { clearFilters() } label: {
+                        Text("Clear all").bingeLabel(10).foregroundStyle(BingeTheme.accent)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, BingeTheme.gutter)
+            .padding(.top, 26)
+            .padding(.bottom, 18)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 26) {
+                    // Sort sits above the rule and never counts toward the badge —
+                    // it doesn't show you less, it reorders what you have.
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Sort by").bingeLabel(9)
+                            .foregroundStyle(BingeTheme.inkMuted)
+                            .padding(.bottom, 10)
+                        ForEach(Array(sortOptions.enumerated()), id: \.offset) { index, label in
+                            Button { sortMode = index } label: {
+                                HStack {
+                                    Text(label).bingeBody(15)
+                                        .foregroundStyle(sortMode == index ? BingeTheme.ink : BingeTheme.inkMuted)
+                                    Spacer()
+                                    if sortMode == index {
+                                        Rectangle().fill(BingeTheme.accent).frame(width: 9, height: 9)
+                                    }
+                                }
+                                .padding(.vertical, 11)
+                                .overlay(alignment: .top) { BingeRule() }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        BingeRule()
+                    }
+
+                    BingeRule(strong: true)
+
+                    facet("Kind", options: ["All", "Shows", "Films"], selection: $kindFilter)
+
+                    facet("Rating", options: ["All", "Rated", "Unrated"], selection: $rateFilter)
+
+                    VStack(alignment: .leading, spacing: 11) {
+                        Text("Platform").bingeLabel(9).foregroundStyle(BingeTheme.inkMuted)
+                        if libraryPlatforms.isEmpty {
+                            Text("No platforms known for these titles yet")
+                                .bingeBody(13).foregroundStyle(BingeTheme.inkFaint)
+                        } else {
+                            BingeFlowGrid {
+                                ForEach(libraryPlatforms, id: \.self) { name in
+                                    let on = platformFilter == name
+                                    Button { platformFilter = on ? nil : name } label: {
+                                        Text(name).bingeLabel(10)
+                                            .foregroundStyle(on ? BingeTheme.ground : BingeTheme.inkMuted)
+                                            .padding(.horizontal, 12).padding(.vertical, 8)
+                                            .background(on ? BingeTheme.ink : BingeTheme.ground)
+                                            .overlay(Rectangle().stroke(on ? BingeTheme.ink : BingeTheme.hairline, lineWidth: 1))
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, BingeTheme.gutter)
+                .padding(.bottom, 24)
+            }
+
+            Button { showFilters = false } label: {
+                Text(items.count == 1 ? "Show 1 title" : "Show \(items.count) titles")
+                    .bingeLabel(11)
+                    .foregroundStyle(BingeTheme.ground)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 17)
+                    .background(BingeTheme.accent)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, BingeTheme.gutter)
+            .padding(.bottom, 28)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(BingeTheme.ground)
+        .foregroundStyle(BingeTheme.ink)
+        .presentationDetents([.large])
+    }
+
+    /// A labelled row of hard-edged cells — the segmented control this system
+    /// already uses, not a picker.
+    private func facet(_ title: String, options: [String], selection: Binding<Int>) -> some View {
+        VStack(alignment: .leading, spacing: 11) {
+            Text(title).bingeLabel(9).foregroundStyle(BingeTheme.inkMuted)
+            HStack(spacing: 0) {
+                ForEach(Array(options.enumerated()), id: \.offset) { index, label in
+                    let on = selection.wrappedValue == index
+                    Button { selection.wrappedValue = index } label: {
+                        Text(label).bingeLabel(10)
+                            .foregroundStyle(on ? BingeTheme.ground : BingeTheme.inkMuted)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(on ? BingeTheme.ink : BingeTheme.ground)
+                            .overlay(Rectangle().stroke(BingeTheme.ink, lineWidth: 1))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    /// One thin line stating the filter in words, only when something is on.
+    @ViewBuilder
+    private var filterSummaryLine: some View {
+        if activeFilterCount > 0 {
+            HStack(spacing: 10) {
+                Text(filterSummary).bingeLabel(10)
+                    .foregroundStyle(BingeTheme.inkMuted).lineLimit(1)
+                Spacer(minLength: 0)
+                Button {
+                    clearFilters()
+                } label: {
+                    Text("Clear").bingeLabel(10).foregroundStyle(BingeTheme.accent)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, BingeTheme.gutter)
+            .padding(.vertical, 11)
+            .background(BingeTheme.ground)
+            BingeRule()
+        }
     }
 
     private func statCell(_ value: String, _ label: String, index: Int) -> some View {
@@ -330,12 +733,29 @@ struct BingeYouView: View {
 
     // MARK: List
 
-    private var items: [BingeLibraryItem] {
+    /// The section's contents before any filtering — what the platform chips
+    /// are built from, so a chip always returns something.
+    private var sectionItems: [BingeLibraryItem] {
         switch section {
         case 1: return engine.watchlist
         case 2: return engine.finished
         default: return engine.watching.isEmpty ? engine.library : engine.watching
         }
+    }
+
+    private var items: [BingeLibraryItem] {
+        let filtered = sectionItems.filter { item in
+            if kindFilter == 1 && item.isMovie { return false }
+            if kindFilter == 2 && !item.isMovie { return false }
+            if ratingFilterApplies {
+                let rated = (item.rating ?? 0) > 0
+                if rateFilter == 1 && !rated { return false }
+                if rateFilter == 2 && rated { return false }
+            }
+            if let platformFilter, item.platform != platformFilter { return false }
+            return true
+        }
+        return applySort(filtered)
     }
 
     private var list: some View {
@@ -352,19 +772,26 @@ struct BingeYouView: View {
                                        message: emptyMessage)
                 } else {
                     ForEach(items) { item in
-                        ZStack(alignment: .trailing) {
-                            NavigationLink {
-                                BingeShowDetailView(tmdbId: item.show.tmdbId,
-                                                    dbShowId: item.show.id,
-                                                    title: item.show.title)
-                            } label: {
-                                row(item)
+                        BingeSwipeRow(shareText: shareText(for: item)) {
+                            ZStack(alignment: .trailing) {
+                                NavigationLink {
+                                    BingeShowDetailView(tmdbId: item.show.tmdbId,
+                                                        dbShowId: item.show.id,
+                                                        title: item.show.title)
+                                } label: {
+                                    row(item)
+                                }
+                                .buttonStyle(.plain)
+                                trailingAction(item)
+                                    .padding(.trailing, BingeTheme.gutter)
                             }
-                            .buttonStyle(.plain)
-                            trailingAction(item)
-                                .padding(.trailing, BingeTheme.gutter)
                         }
                         .contextMenu {
+                            // The swipe is invisible until found; long-press is the
+                            // discoverable path to the same action.
+                            ShareLink(item: shareText(for: item)) {
+                                Label("Share", systemImage: "square.and.arrow.up")
+                            }
                             Button(role: .destructive) {
                                 Task { await engine.delete(item: item) }
                             } label: {
@@ -405,9 +832,18 @@ struct BingeYouView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.show.title).bingeHeadline(16).lineLimit(1)
 
-                // Finished: a fact about the title. Everything else: where you are.
-                Text(item.isFinished ? item.finishedMeta : item.subtitle)
-                    .bingeBody(12).foregroundStyle(BingeTheme.inkMuted).lineLimit(1)
+                // Finished: facts about the title. Everything else: where you are.
+                if item.isFinished {
+                    Text(item.kindLine)
+                        .bingeBody(12).foregroundStyle(BingeTheme.inkMuted).lineLimit(1)
+                    if let lengthLine = item.lengthLine {
+                        Text(lengthLine)
+                            .bingeBody(12).foregroundStyle(BingeTheme.inkMuted).lineLimit(1)
+                    }
+                } else {
+                    Text(item.subtitle)
+                        .bingeBody(12).foregroundStyle(BingeTheme.inkMuted).lineLimit(1)
+                }
 
                 if item.isFinished {
                     // The verdict, always on the same line whether set or not — so

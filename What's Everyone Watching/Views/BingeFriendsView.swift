@@ -130,27 +130,96 @@ struct BingeFriendsFeed: View {
         .frame(maxWidth: .infinity)
     }
 
+    /// Empty, but the same page. 3a's architecture is strip → strong rule →
+    /// stacked rows, and that shape should be legible before a single friend
+    /// exists — so the strip is present with its slots drawn empty, and the
+    /// rows below are outlined rather than filled with invented people. The
+    /// one thing this must never do is fake a social graph.
     private var empty: some View {
-        VStack(spacing: 0) {
-            BingeArgumentBlock(
-                kicker: "Nobody here yet",
-                headline: "BINGE IS EMPTY\nWITHOUT THEM.",
-                message: "Every recommendation comes from someone you know. Add three people and Tonight starts working.")
-            BingePrimaryButton(title: "Find people") { onFindPeople() }
-                .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 18)
-            BingeRule(strong: true)
+        ScrollView {
+            VStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Watching right now").bingeLabel(11).foregroundStyle(BingeTheme.inkMuted)
+                    HStack(spacing: 10) {
+                        Button { onFindPeople() } label: {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text("+")
+                                    .bingeHeadline(20)
+                                    .foregroundStyle(BingeTheme.accent)
+                                    .frame(width: 50, height: 50)
+                                    .overlay(Rectangle().stroke(BingeTheme.accent, lineWidth: 1))
+                                Text("Add").bingeBody(10)
+                                    .foregroundStyle(BingeTheme.accent)
+                                    .frame(width: 50, alignment: .leading)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("What lands here").bingeLabel(11).foregroundStyle(BingeTheme.inkMuted)
-                Text("Ratings, finished shows and the title two or more of your people are on — newest first.")
-                    .bingeBody(13).foregroundStyle(BingeTheme.ink.opacity(0.78))
-                    .fixedSize(horizontal: false, vertical: true)
+                        ForEach(0..<3, id: \.self) { _ in
+                            VStack(alignment: .leading, spacing: 5) {
+                                Rectangle().fill(Color.clear)
+                                    .frame(width: 50, height: 50)
+                                    .overlay(Rectangle().stroke(BingeTheme.hairline, lineWidth: 1))
+                                Rectangle().fill(BingeTheme.hairline)
+                                    .frame(width: 34, height: 6)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 16)
+                BingeRule(strong: true)
+
+                BingeArgumentBlock(
+                    kicker: "Nobody here yet",
+                    headline: "BINGE IS EMPTY\nWITHOUT THEM.",
+                    message: "Every recommendation comes from someone you know. Add three people and Tonight starts working.")
+                BingePrimaryButton(title: "Find people") { onFindPeople() }
+                    .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 18)
+                BingeRule(strong: true)
+
+                // The feed's own row, drawn hollow — this is the shape your
+                // people will arrive in, not a placeholder for a person.
+                ghostRow(lines: 3)
+                BingeRule()
+                ghostRow(lines: 2)
+                BingeRule()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("What lands here").bingeLabel(11).foregroundStyle(BingeTheme.inkMuted)
+                    Text("Ratings, finished shows and the title two or more of your people are on — newest first.")
+                        .bingeBody(13).foregroundStyle(BingeTheme.ink.opacity(0.78))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 16)
+                BingeRule()
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 16)
-            BingeRule()
+        }
+    }
+
+    private func ghostRow(lines: Int) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Rectangle().fill(Color.clear)
+                .frame(width: 74, height: 104)
+                .overlay(Rectangle().stroke(BingeTheme.hairline, lineWidth: 1))
+            VStack(alignment: .leading, spacing: 9) {
+                Rectangle().fill(BingeTheme.hairline).frame(width: 118, height: 6)
+                Rectangle().fill(BingeTheme.hairline).frame(height: 10)
+                if lines > 2 {
+                    Rectangle().fill(BingeTheme.hairline).frame(height: 10).frame(maxWidth: 180)
+                }
+                Rectangle().fill(Color.clear)
+                    .frame(width: 66, height: 24)
+                    .overlay(Rectangle().stroke(BingeTheme.hairline, lineWidth: 1))
+            }
             Spacer(minLength: 0)
         }
+        .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 18)
+        .opacity(0.9)
+        .accessibilityHidden(true)
     }
 
     private var feed: some View {
@@ -161,13 +230,13 @@ struct BingeFriendsFeed: View {
                         Text("Watching right now").bingeLabel(11).foregroundStyle(BingeTheme.inkMuted)
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 10) {
-                                ForEach(engine.friends) { f in
+                                ForEach(Array(engine.friends.enumerated()), id: \.element.id) { index, f in
                                     VStack(alignment: .leading, spacing: 5) {
                                         Text(initials(f.name))
                                             .bingeHeadline(12)
                                             .frame(width: 50, height: 50)
-                                            .background(BingeTheme.ink)
-                                            .foregroundStyle(BingeTheme.ground)
+                                            .background(tileFill(index))
+                                            .foregroundStyle(tileInk(index))
                                         Text(engine.nowWatching[f.id]
                                              ?? (f.name.split(separator: " ").first.map(String.init) ?? f.name))
                                             .bingeBody(10)
@@ -220,6 +289,21 @@ struct BingeFriendsFeed: View {
                 }
             }
         }
+    }
+
+    /// The strip alternates weight so a row of initials reads as people rather
+    /// than a barcode. Accent appears once every four, never more.
+    private func tileFill(_ index: Int) -> Color {
+        switch index % 4 {
+        case 1:  return BingeTheme.accent
+        case 2:  return BingeTheme.inkMuted
+        case 3:  return BingeTheme.inkFaint
+        default: return BingeTheme.ink
+        }
+    }
+
+    private func tileInk(_ index: Int) -> Color {
+        index % 4 == 3 ? BingeTheme.ink : BingeTheme.ground
     }
 
     private func initials(_ name: String) -> String {
