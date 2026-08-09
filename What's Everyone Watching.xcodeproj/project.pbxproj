@@ -21,7 +21,7 @@
 		552136653028095000479F7D /* Exceptions for "What's Everyone Watching" folder in "What's Everyone Watching" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				"What-s-Everyone-Watching-Info.plist",
+				
 			);
 			target = 000000000000000100000000 /* What's Everyone Watching */;
 		};
@@ -281,7 +281,6 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "What-s-Everyone-Watching-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = word;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -322,7 +321,6 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "What-s-Everyone-Watching-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = word;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
