@@ -7,6 +7,7 @@
 //  Change it back any time. Your original MainTabView is untouched.
 
 import SwiftUI
+import UIKit
 
 struct BingeMainTabView: View {
     @StateObject private var supabase = SupabaseService.shared
@@ -36,6 +37,20 @@ struct BingeMainTabView: View {
         .environmentObject(notificationManager)
         .environmentObject(youEngine)
         .tint(BingeTheme.accent)
+        .onAppear {
+            // Temporary: .custom() falls back to San Francisco SILENTLY when a
+            // font isn't in the target, so a missing Archivo looks like a design
+            // problem rather than a build one. Check the console for "Archivo".
+            #if DEBUG
+            print("— Archivo loaded:", UIFont.fontNames(forFamilyName: "Archivo"))
+            let ttf = Bundle.main.urls(forResourcesWithExtension: "ttf", subdirectory: nil)?
+                .map { $0.lastPathComponent }.sorted() ?? []
+            let otf = Bundle.main.urls(forResourcesWithExtension: "otf", subdirectory: nil)?
+                .map { $0.lastPathComponent }.sorted() ?? []
+            print("— Font files in bundle:", ttf + otf)
+            print("— UIAppFonts declared:", Bundle.main.object(forInfoDictionaryKey: "UIAppFonts") ?? "MISSING")
+            #endif
+        }
         .sheet(item: $ratingPrompt) { payload in
             DailyRatingPrompt(items: payload.items) {
                 ratingPrompt = nil
@@ -57,7 +72,9 @@ struct BingeMainTabView: View {
         guard hoursSinceLastPrompt >= 24, let userId = supabase.currentUser?.id else { return }
         guard let items = try? await loadWatchingItems(userId: userId) else { return }
 
-        let unrated = items.filter { $0.rating == nil && $0.isWatching }
+        // Finished-but-unrated, not mid-watch: "how was it" is a question you
+        // can only answer about something you've actually finished.
+        let unrated = items.filter { $0.rating == nil && $0.isFinished }
         guard !unrated.isEmpty else { return }
 
         // Building the payload IS the trigger, so the sheet can never open empty.
@@ -211,78 +228,130 @@ struct RatingPromptPayload: Identifiable {
     let items: [BingeLibraryItem]
 }
 
+/// 19a: the whole ask, visible at once, rated in place. A daily prompt has to
+/// be cheaper than the thing it's nudging you toward — so the stars live in the
+/// row and one tap is the entire interaction. No second sheet.
 struct DailyRatingPrompt: View {
     @EnvironmentObject private var supabase: SupabaseService
     let items: [BingeLibraryItem]
     let onDismiss: () -> Void
-    @State private var ratingTarget: BingeLibraryItem?
+
+    /// show id → score, held locally so a tap lands instantly and the write
+    /// happens behind it.
+    @State private var scores: [Int: Int] = [:]
+
+    private var ratedCount: Int {
+        var n = 0
+        for value in scores.values where value > 0 { n += 1 }
+        return n
+    }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                HStack {
-                    Text("Rate these").bingeDisplay(28)
-                    Spacer()
-                    Button { onDismiss() } label: {
-                        Text("Skip").bingeLabel(11).foregroundStyle(BingeTheme.accent)
-                            .padding(.vertical, 8).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
+        VStack(spacing: 0) {
+            HStack(alignment: .lastTextBaseline) {
+                Text("Rate these").bingeDisplay(28)
+                Spacer(minLength: 12)
+                // One way out, and it isn't the loudest thing on screen.
+                Button { onDismiss() } label: {
+                    Text("Not now").bingeLabel(11)
+                        .foregroundStyle(BingeTheme.inkMuted)
+                        .padding(.vertical, 8).contentShape(Rectangle())
                 }
-                .padding(.horizontal, BingeTheme.gutter).padding(.top, 12).padding(.bottom, 10)
-                BingeRule(strong: true)
-
-                if items.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Nothing to rate").bingeLabel(11).foregroundStyle(BingeTheme.inkMuted)
-                        Text("You're caught up on everything you're watching.")
-                            .bingeBody(14).foregroundStyle(BingeTheme.inkMuted)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 18)
-                }
-
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(items) { item in
-                            Button { ratingTarget = item } label: {
-                                HStack(spacing: 14) {
-                                    BingePoster(urlString: item.show.posterUrl, width: 48, height: 68)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(item.show.title).bingeHeadline(15).lineLimit(2)
-                                        Text("Tap to rate").bingeLabel(10).foregroundStyle(BingeTheme.inkMuted)
-                                    }
-                                    Spacer()
-                                    Text("★").bingeHeadline(16).foregroundStyle(BingeTheme.accentTint)
-                                }
-                                .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 12)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(BingeTheme.ink)
-                            BingeRule()
-                        }
-                    }
-                }
-
-                VStack(spacing: 9) {
-                    BingePrimaryButton(title: "Later") { onDismiss() }
-                }
-                .padding(.horizontal, BingeTheme.gutter).padding(.top, 12).padding(.bottom, 20)
+                .buttonStyle(.plain)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .background(BingeTheme.ground)
-            .foregroundStyle(BingeTheme.ink)
-            .toolbar(.hidden, for: .navigationBar)
-            .sheet(item: $ratingTarget) { item in
-                BingeRatingSheet(title: item.show.title,
-                                 posterUrl: item.show.posterUrl,
-                                 itemId: item.show.id,
-                                 isMovie: false,
-                                 existingRating: item.rating) { _, _ in
-                    ratingTarget = nil
+            .padding(.horizontal, BingeTheme.gutter).padding(.top, 14)
+
+            Text("You finished these. One tap each and Tonight gets sharper.")
+                .bingeBody(12).foregroundStyle(BingeTheme.inkMuted)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, BingeTheme.gutter)
+                .padding(.top, 6).padding(.bottom, 12)
+
+            BingeRule(strong: true)
+
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(items) { item in
+                        promptRow(item)
+                        BingeRule()
+                    }
                 }
+            }
+
+            Spacer(minLength: 0)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("\(ratedCount) of \(items.count) rated").bingeLabel(11)
+                    .foregroundStyle(BingeTheme.inkMuted)
+                HStack(spacing: 3) {
+                    ForEach(0..<items.count, id: \.self) { index in
+                        Rectangle()
+                            .fill(index < ratedCount ? BingeTheme.accent : BingeTheme.hairline)
+                            .frame(height: 5)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, BingeTheme.gutter)
+            .padding(.top, 16).padding(.bottom, 22)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(BingeTheme.ground)
+        .foregroundStyle(BingeTheme.ink)
+    }
+
+    private func promptRow(_ item: BingeLibraryItem) -> some View {
+        let score = scores[item.show.id] ?? 0
+        return HStack(spacing: 14) {
+            BingePoster(urlString: item.show.posterUrl, width: 48, height: 68)
+
+            VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(item.show.title).bingeHeadline(15).lineLimit(1)
+                    Text(item.kindLine).bingeLabel(10).foregroundStyle(BingeTheme.inkMuted)
+                }
+                // 30pt targets — on this screen, hitting the right star is the
+                // entire job, so they're twice the size they are in the library.
+                HStack(spacing: 7) {
+                    ForEach(1...5, id: \.self) { star in
+                        Button { set(star, on: item) } label: {
+                            Image(systemName: star <= score ? "star.fill" : "star")
+                                .font(.system(size: 21))
+                                .foregroundStyle(star <= score ? BingeTheme.ink : BingeTheme.inkFaint)
+                                .frame(width: 30, height: 30)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(star) star\(star == 1 ? "" : "s")")
+                    }
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            // Status only — nothing here until it's been answered.
+            if score > 0 {
+                Text("Saved").bingeLabel(10).foregroundStyle(BingeTheme.inkMuted)
+            }
+        }
+        .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 16)
+    }
+
+    private func set(_ score: Int, on item: BingeLibraryItem) {
+        scores[item.show.id] = score
+        let done = ratedCount == items.count
+        Task {
+            guard let userId = supabase.currentUser?.id else { return }
+            try? await supabase.updateRating(userId: userId,
+                                             itemId: item.show.id,
+                                             rating: score,
+                                             review: nil,
+                                             isMovie: item.isMovie)
+            // Got what it came for — don't make them dismiss it too.
+            if done {
+                try? await Task.sleep(nanoseconds: 450_000_000)
+                onDismiss()
             }
         }
     }
