@@ -59,11 +59,33 @@ enum BingeTheme {
 
 // MARK: - Text roles (Dynamic Type aware, with per-role growth caps)
 
+/// One place to retune the whole app's type. Every `bingeDisplay/Headline/
+/// Label/Body` call multiplies its size by the matching factor here, so a
+/// screen never needs its own numbers changed — and the ratios between roles
+/// stay fixed, which is what keeps the hierarchy readable.
+///
+/// Roles scale independently on purpose: display type can grow a lot before it
+/// crowds, while the uppercase labels are wide-tracked and turn into noise if
+/// they grow at the same rate. 1.00 = as designed.
+private enum BingeTypeScale {
+    static let display  : CGFloat = 1.10
+    static let headline : CGFloat = 1.12
+    static let label    : CGFloat = 1.08
+    static let body     : CGFloat = 1.12
+
+    /// Labels were authored from 9pt up, and the small end stopped being
+    /// readable once real copy went in — but the 13pt ones are already right,
+    /// so scaling the whole role would overshoot. A floor lifts only the
+    /// bottom: 9/10/11 all land here, 12+ is untouched.
+    static let labelFloor: CGFloat = 12
+}
+
 private struct BingeDisplayMod: ViewModifier {
     let size: CGFloat
     @ScaledMetric(relativeTo: .largeTitle) private var scale: CGFloat = 1
     func body(content: Content) -> some View {
-        let s = min(size * scale, size * 1.35)
+        let base = size * BingeTypeScale.display
+        let s = min(base * scale, base * 1.35)
         content.font(BingeTheme.display(s)).tracking(s * -0.035)
     }
 }
@@ -71,7 +93,8 @@ private struct BingeHeadlineMod: ViewModifier {
     let size: CGFloat
     @ScaledMetric(relativeTo: .headline) private var scale: CGFloat = 1
     func body(content: Content) -> some View {
-        let s = min(size * scale, size * 1.6)
+        let base = size * BingeTypeScale.headline
+        let s = min(base * scale, base * 1.6)
         content.font(BingeTheme.heavy(s)).tracking(s * -0.02)
     }
 }
@@ -79,7 +102,8 @@ private struct BingeLabelMod: ViewModifier {
     let size: CGFloat
     @ScaledMetric(relativeTo: .caption) private var scale: CGFloat = 1
     func body(content: Content) -> some View {
-        let s = min(size * scale, size * 1.8)
+        let base = max(size * BingeTypeScale.label, BingeTypeScale.labelFloor)
+        let s = min(base * scale, base * 1.8)
         content.font(BingeTheme.semi(s)).tracking(s * 0.16).textCase(.uppercase)
     }
 }
@@ -87,7 +111,7 @@ private struct BingeBodyMod: ViewModifier {
     let size: CGFloat
     @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
     func body(content: Content) -> some View {
-        let s = size * scale
+        let s = size * BingeTypeScale.body * scale
         content.font(BingeTheme.body(s)).lineSpacing(s * 0.45)
     }
 }
