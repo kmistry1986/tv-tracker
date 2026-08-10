@@ -1,796 +1,1055 @@
+//  ImportManagementView.swift
+//  The redesigned import sheet: start → preview → running → result → fill gaps → log.
+//
+//  Five things this fixes beyond the styling, all found in the previous version:
+//  · `unmatchedEpisodes` was never persisted — there was a saveFailedImports()
+//    with no counterpart, so the larger of the two logs died on every relaunch.
+//    Both kinds are now one `ImportIssue` row in Supabase.
+//  · The history screen stacked two `List`s in a VStack — two independently
+//    scrolling lists in one sheet, the second unreachable on a short screen.
+//    It's one list with two sections now.
+//  · `processedCount += entries.count` appeared TWICE in a row in two places,
+//    so progress ran past 100% and "23 / 12" was reachable. Counted once, and
+//    counted in shows rather than rows, which is what the loop actually does.
+//  · The outcome was a four-line emoji alert — the only place the numbers were
+//    ever stated, and gone the moment you tapped OK. It's a screen.
+//  · Prime Video took 50% of a segmented control to say "Coming Soon".
+//
+//  Gap filling: when an episode can't be named but sits in a hole bounded by
+//  watched episodes, and the unplaced CSV rows for that season account for the
+//  hole, it's offered as a batch proposal. See `proposeGapFills`.
+//
+//  REQUIRES: three new SupabaseService methods and one table — see the comment
+//  at the foot of this file.
+
 import SwiftUI
 import UniformTypeIdentifiers
 
+// MARK: - Model
+
+/// One row in the import log. Both failure kinds live in one table because
+/// they're one list on screen — and because keeping them apart is what let the
+/// unmatched half go unpersisted for so long.
+struct ImportIssue: Codable, Identifiable, Hashable {
+    enum Kind: String, Codable {
+        /// TMDB has no show under that name. You can act on this.
+        case notFound = "not_found"
+        /// Show matched; the episode line didn't. Informational.
+        case unplaced = "unplaced"
+    }
+
+    var id: Int?
+    var kind: Kind
+    /// For `.notFound` this is the title we searched. For `.unplaced` it's the
+    /// raw CSV line, kept verbatim so you can see WHY it failed.
+    var title: String
+    var showName: String?
+    var source: String
+    var createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, kind, title
+        case showName = "show_name"
+        case source
+        case createdAt = "created_at"
+    }
+}
+
+/// A run of episodes we'd mark watched, with the evidence for it.
+struct GapProposal: Identifiable, Hashable {
+    let id = UUID()
+    let tmdbShowId: Int
+    let showName: String
+    let season: Int
+    let episodes: [Int]
+    let unplacedCount: Int
+    /// The date to record — taken from the unplaced rows it accounts for.
+    let watchedDate: String
+
+    var range: String {
+        guard let first = episodes.first, let last = episodes.last else { return "" }
+        return first == last ? "E\(first)" : "E\(first)–E\(last)"
+    }
+
+    var evidence: String {
+        guard let first = episodes.first, let last = episodes.last else { return "" }
+        let rows = unplacedCount == 1 ? "1 unplaced row" : "\(unplacedCount) unplaced rows"
+        return "E\(first - 1) and E\(last + 1) are watched · \(rows) for S\(season)"
+    }
+}
+
+/// A show as the importer actually processes it — one lookup per show, not per
+/// CSV row. 862 rows is unreadable as checkboxes; 41 shows is a decision.
+struct ImportShowGroup: Identifiable {
+    let id = UUID()
+    let showName: String
+    let entries: [NetflixCSVParser.ParsedEntry]
+
+    var isFilm: Bool { entries.allSatisfy { !$0.isShow } }
+
+    var meta: String {
+        if isFilm {
+            return "Film · watched \(entries.first?.date ?? "")"
+        }
+        let seasons = Set(entries.compactMap(\.seasonNumber)).sorted()
+        let count = entries.count
+        let episodes = "\(count) episode\(count == 1 ? "" : "s")"
+        guard let low = seasons.first, let high = seasons.last else {
+            return "Series · \(episodes)"
+        }
+        let span = low == high ? "S\(low)" : "S\(low)–S\(high)"
+        return "Series · \(episodes) · \(span)"
+    }
+}
+
+// MARK: - View
+
 struct ImportManagementView: View {
-    @State private var selectedTab = 0
+    /// Optional: lets a "not found" row hand the title to the Search tab. With
+    /// no handler the title goes to the clipboard instead — useful, never broken.
+    var onSearch: ((String) -> Void)? = nil
+
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var supabase = SupabaseService.shared
+    @StateObject private var tmdb = TMDBService.shared
+
+    private enum Phase { case start, preview, running, result, gaps, log }
+    @State private var phase: Phase = .start
+
+    @State private var showsPicker = false
+    @State private var groups: [ImportShowGroup] = []
+    @State private var selected = Set<UUID>()
+
+    @State private var doneShows = 0
+    @State private var currentShow = ""
+    @State private var matched = 0
+    @State private var unplaced = 0
+    @State private var notFound = 0
+    @State private var filmsAdded = 0
+    @State private var showsTouched = 0
+    @State private var stopRequested = false
+
+    @State private var proposals: [GapProposal] = []
+    @State private var acceptedProposals = Set<UUID>()
+    @State private var issues: [ImportIssue] = []
+    @State private var error: String?
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Picker("", selection: $selectedTab) {
-                    Text("Netflix").tag(0)
-                    Text("Prime Video").tag(1)
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.top, 10)
+                header
+                BingeRule(strong: true)
 
-                if selectedTab == 0 {
-                    NetflixImportView()
-                } else {
-                    PrimeVideoImportView()
+                switch phase {
+                case .start:   start
+                case .preview: preview
+                case .running: running
+                case .result:  result
+                case .gaps:    gaps
+                case .log:     log
                 }
             }
-            .navigationTitle("Import")
+            .background(BingeTheme.ground)
+            .foregroundStyle(BingeTheme.ink)
+            .toolbar(.hidden, for: .navigationBar)
         }
-    }
-}
-
-struct NetflixImportView: View {
-    @StateObject private var supabase = SupabaseService.shared
-    @StateObject private var tmdb = TMDBService.shared
-    @State private var isDocumentPickerPresented = false
-    @State private var parsedEntries: [NetflixCSVParser.ParsedEntry] = []
-    @State private var selectedEntries = Set<Int>()
-    @State private var isImporting = false
-    @State private var importProgress = 0
-    @State private var totalItems = 0
-    @State private var error: String?
-    @State private var successMessage: String?
-    @State private var failedImports: [FailedImport] = []
-    @State private var unmatchedEpisodes: [UnmatchedEpisode] = []
-    @State private var showHistory = false
-
-    var body: some View {
-        VStack(spacing: 0) {
-            if parsedEntries.isEmpty && !showHistory {
-                importEmptyState
-            } else if showHistory {
-                failedImportHistory
-            } else {
-                importPreview
-            }
-        }
-        .fileImporter(
-            isPresented: $isDocumentPickerPresented,
-            allowedContentTypes: [UTType.commaSeparatedText, UTType.plainText],
-            onCompletion: handleFileSelection
-        )
-        .alert("Error", isPresented: .constant(error != nil), presenting: error) { _ in
+        .fileImporter(isPresented: $showsPicker,
+                      allowedContentTypes: [UTType.commaSeparatedText, UTType.plainText],
+                      onCompletion: handleFile)
+        .alert("Couldn't read that", isPresented: .constant(error != nil), presenting: error) { _ in
             Button("OK") { error = nil }
-        } message: { errorMsg in
-            Text(errorMsg)
-        }
-        .alert("Success", isPresented: .constant(successMessage != nil), presenting: successMessage) { _ in
-            Button("OK") {
-                successMessage = nil
-                resetImport()
+        } message: { Text($0) }
+        .task { await loadIssues() }
+    }
+
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(headerTitle).bingeDisplay(30)
+            Spacer(minLength: 12)
+            if phase == .log && !issues.isEmpty {
+                Button { Task { await clearIssues() } } label: {
+                    Text("Clear").bingeLabel(13).foregroundStyle(BingeTheme.inkMuted)
+                }
+                .buttonStyle(.plain)
+            } else if phase != .running {
+                Button { dismiss() } label: {
+                    Text("Close").bingeLabel(13).foregroundStyle(BingeTheme.inkMuted)
+                }
+                .buttonStyle(.plain)
             }
-        } message: { msg in
-            Text(msg)
         }
-        .onAppear {
-            loadFailedImports()
+        .padding(.horizontal, BingeTheme.gutter)
+        .padding(.top, 18).padding(.bottom, 14)
+    }
+
+    private var headerTitle: String {
+        switch phase {
+        case .running: return "Importing"
+        case .result:  return "Imported"
+        case .gaps:    return "Fill the gaps?"
+        case .log:     return "Import log"
+        default:       return "Import"
         }
     }
 
-    @ViewBuilder
-    private var importEmptyState: some View {
-        VStack(spacing: 20) {
-            VStack(spacing: 16) {
-                Image(systemName: "doc.badge.plus")
-                    .font(.system(size: 60))
-                    .foregroundColor(.blue)
+    // MARK: Start
 
-                VStack(spacing: 8) {
-                    Text("Import Your Netflix History")
-                        .font(.title2)
-                        .fontWeight(.bold)
-
-                    Text("Easily add all your watched shows and movies")
-                        .font(.body)
-                        .foregroundColor(.gray)
-                        .multilineTextAlignment(.center)
+    private var start: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 9) {
+                    Text("Netflix").bingeLabel(13).foregroundStyle(BingeTheme.accent)
+                    Text("Bring everything you've already watched.")
+                        .bingeHeadline(19)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Netflix gives you a CSV of your viewing activity. Hand it over and we'll match it against every show and episode.")
+                        .bingeBody(14).foregroundStyle(BingeTheme.inkMuted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-            }
-            .padding()
+                .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 20)
 
-            VStack(spacing: 12) {
-                Button(action: { isDocumentPickerPresented = true }) {
-                    HStack {
-                        Image(systemName: "folder")
-                        Text("Choose Netflix CSV File")
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(8)
-                }
+                primaryButton("Choose CSV file") { showsPicker = true }
+                    .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 20)
 
                 #if DEBUG
-                Button(action: loadTestData) {
-                    HStack {
-                        Image(systemName: "testtube.2")
-                        Text("Load Test Data (Dev Only)")
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color.orange)
-                    .foregroundColor(.white)
-                    .cornerRadius(8)
+                Button { loadTestData() } label: {
+                    Text("Load test data").bingeLabel(13).foregroundStyle(BingeTheme.inkMuted)
+                        .frame(maxWidth: .infinity, minHeight: BingeTheme.minTap, alignment: .leading)
+                        .padding(.horizontal, 18)
+                        .overlay(Rectangle().stroke(BingeTheme.hairline, lineWidth: 1))
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 20)
                 #endif
 
-                if !failedImports.isEmpty || !unmatchedEpisodes.isEmpty {
-                    Button(action: { showHistory = true }) {
-                        HStack {
-                            Image(systemName: "exclamationmark.circle")
-                            let totalIssues = failedImports.count + unmatchedEpisodes.count
-                            Text("View Import History (\(totalIssues) issues)")
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color.orange.opacity(0.2))
-                        .foregroundColor(.orange)
-                        .cornerRadius(8)
-                    }
+                BingeRule()
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Where to get it").bingeLabel(13)
+                        .foregroundStyle(BingeTheme.inkMuted)
+                        .padding(.bottom, 12)
+                    step(1, "Open netflix.com/viewingactivity")
+                    step(2, "Download all — it arrives as a CSV")
+                    step(3, "Come back here and pick the file")
+                    BingeRule()
                 }
+                .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 18)
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("How to get your Netflix CSV:")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.gray)
+                BingeRule()
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 8) {
-                            Text("1")
-                                .font(.caption)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
-                                .frame(width: 24, height: 24)
-                                .background(Color.blue)
-                                .cornerRadius(12)
-
-                            Text("Visit viewingactivity.netflix.com")
-                                .font(.caption)
-                        }
-
-                        HStack(spacing: 8) {
-                            Text("2")
-                                .font(.caption)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
-                                .frame(width: 24, height: 24)
-                                .background(Color.blue)
-                                .cornerRadius(12)
-
-                            Text("Click \"Download Your Personal Information\"")
-                                .font(.caption)
-                        }
-
-                        HStack(spacing: 8) {
-                            Text("3")
-                                .font(.caption)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
-                                .frame(width: 24, height: 24)
-                                .background(Color.blue)
-                                .cornerRadius(12)
-
-                            Text("Save the CSV to your device")
-                                .font(.caption)
-                        }
-
-                        HStack(spacing: 8) {
-                            Text("4")
-                                .font(.caption)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
-                                .frame(width: 24, height: 24)
-                                .background(Color.blue)
-                                .cornerRadius(12)
-
-                            Text("Import it here!")
-                                .font(.caption)
-                        }
-                    }
-                    .padding(12)
-                    .background(Color.blue.opacity(0.1))
-                    .cornerRadius(8)
-                }
-            }
-            .padding()
-
-            Spacer()
-        }
-    }
-
-    @ViewBuilder
-    private var importPreview: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Parsed Entries: \(parsedEntries.count)")
-                    .fontWeight(.semibold)
-
-                Spacer()
-
-                if !failedImports.isEmpty || !unmatchedEpisodes.isEmpty {
-                    Button(action: { showHistory = true }) {
-                        Text("History")
-                            .foregroundColor(.orange)
-                    }
-                }
-
-                Button(action: resetImport) {
-                    Text("Reset")
-                        .foregroundColor(.blue)
-                }
-            }
-            .padding(.horizontal)
-
-            if let error = error {
-                Text(error)
-                    .foregroundColor(.red)
-                    .font(.caption)
-                    .padding(.horizontal)
-            }
-
-            List {
-                ForEach(Array(parsedEntries.enumerated()), id: \.offset) { index, entry in
-                    ImportEntryRow(entry: entry, isSelected: selectedEntries.contains(index))
-                        .onTapGesture {
-                            if selectedEntries.contains(index) {
-                                selectedEntries.remove(index)
-                            } else {
-                                selectedEntries.insert(index)
-                            }
-                        }
-                }
-            }
-            .frame(maxHeight: 300)
-
-            if isImporting {
-                VStack(spacing: 8) {
-                    ProgressView(value: Double(importProgress), total: Double(totalItems))
+                Button { phase = .log } label: {
                     HStack {
-                        Text("\(importProgress) / \(totalItems) imported")
-                            .font(.caption)
-                            .foregroundColor(.gray)
+                        Text("Past imports").bingeBody(14)
                         Spacer()
-                        if importProgress > 0 {
-                            Text("(\(Int(Double(importProgress) / Double(totalItems) * 100))%)")
-                                .font(.caption)
-                                .foregroundColor(.blue)
+                        if !issues.isEmpty {
+                            Text("\(issues.count)").bingeLabel(13)
+                                .foregroundStyle(BingeTheme.ground)
+                                .padding(.horizontal, 8).padding(.vertical, 3)
+                                .background(BingeTheme.ink)
                         }
+                        Text("View").bingeLabel(13).foregroundStyle(BingeTheme.accent)
                     }
+                    .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 16)
+                    .contentShape(Rectangle())
                 }
-                .padding()
-            } else {
-                Button(action: startImport) {
-                    Text("Import Selected (\(selectedEntries.count))")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(selectedEntries.isEmpty ? Color.gray : Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(8)
-                }
-                .disabled(selectedEntries.isEmpty)
-                .padding()
+                .buttonStyle(.plain)
+
+                BingeRule()
+                // One honest line. It used to be half a segmented control
+                // advertising an absence every time the sheet opened.
+                Text("Prime Video isn't supported yet.")
+                    .bingeBody(13).foregroundStyle(BingeTheme.inkFaint)
+                    .padding(.horizontal, BingeTheme.gutter)
+                    .padding(.top, 15).padding(.bottom, 24)
             }
         }
     }
 
-    @ViewBuilder
-    private var failedImportHistory: some View {
-        VStack(spacing: 12) {
+    private func step(_ n: Int, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Text("\(n)").bingeLabel(13).foregroundStyle(BingeTheme.accent).frame(width: 16, alignment: .leading)
+            Text(text).bingeBody(14).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 10)
+        .overlay(alignment: .top) { BingeRule() }
+    }
+
+    // MARK: Preview
+
+    private var preview: some View {
+        VStack(spacing: 0) {
             HStack {
-                Text("Import History")
-                    .fontWeight(.semibold)
-
+                Text("\(groups.reduce(0) { $0 + $1.entries.count }) rows · \(groups.count) shows")
+                    .bingeBody(14)
                 Spacer()
+                Button { selected = [] } label: {
+                    Text("None").bingeLabel(13).foregroundStyle(BingeTheme.inkMuted)
+                }
+                .buttonStyle(.plain)
+                Button { selected = Set(groups.map(\.id)) } label: {
+                    Text("All").bingeLabel(13).foregroundStyle(BingeTheme.accent)
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 16)
+            }
+            .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 14)
+            BingeRule(strong: true)
 
-                Button(action: { showHistory = false }) {
-                    Text("Back")
-                        .foregroundColor(.blue)
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(groups) { group in
+                        Button {
+                            if selected.contains(group.id) { selected.remove(group.id) }
+                            else { selected.insert(group.id) }
+                        } label: {
+                            HStack(spacing: 13) {
+                                checkbox(selected.contains(group.id))
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(group.showName).bingeHeadline(16).lineLimit(1)
+                                        .foregroundStyle(selected.contains(group.id) ? BingeTheme.ink : BingeTheme.inkMuted)
+                                    Text(group.meta).bingeLabel(13).foregroundStyle(BingeTheme.inkMuted)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 15)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        BingeRule()
+                    }
                 }
             }
-            .padding(.horizontal)
 
-            if failedImports.isEmpty && unmatchedEpisodes.isEmpty {
-                VStack {
-                    Text("No failed imports")
-                        .foregroundColor(.gray)
+            BingeRule(strong: true)
+            primaryButton(selected.count == 1 ? "Import 1 show" : "Import \(selected.count) shows") {
+                Task { await runImport() }
+            }
+            .opacity(selected.isEmpty ? 0.45 : 1)
+            .allowsHitTesting(!selected.isEmpty)
+            .padding(.horizontal, BingeTheme.gutter)
+            .padding(.top, 16).padding(.bottom, 22)
+        }
+    }
+
+    private func checkbox(_ on: Bool) -> some View {
+        Group {
+            if on {
+                Text("✓").bingeLabel(13).foregroundStyle(BingeTheme.ground)
+                    .frame(width: 20, height: 20).background(BingeTheme.ink)
+            } else {
+                Rectangle().fill(Color.clear).frame(width: 20, height: 20)
+                    .overlay(Rectangle().stroke(BingeTheme.hairline, lineWidth: 1))
+            }
+        }
+    }
+
+    // MARK: Running
+
+    private var running: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .lastTextBaseline, spacing: 8) {
+                    Text("\(doneShows)").bingeDisplay(52)
+                    Text("of \(selected.count) shows").bingeHeadline(19)
+                        .foregroundStyle(BingeTheme.inkMuted)
+                }
+                GeometryReader { geo in
+                    HStack(spacing: 2) {
+                        Rectangle().fill(BingeTheme.accent)
+                            .frame(width: max(0, geo.size.width * progress))
+                        Rectangle().fill(BingeTheme.hairline)
+                    }
+                }
+                .frame(height: 8)
+                .padding(.top, 18)
+
+                if !currentShow.isEmpty {
+                    Text("Matching episodes for \(currentShow)")
+                        .bingeBody(14).foregroundStyle(BingeTheme.inkMuted)
+                        .lineLimit(1)
+                        .padding(.top, 14)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 24)
+
+            BingeRule()
+            HStack(spacing: 0) {
+                tally("\(matched)", "Matched")
+                BingeVRule()
+                tally("\(unplaced)", "Skipped")
+                BingeVRule()
+                tally("\(notFound)", "Not found", accent: true)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            BingeRule()
+
+            Spacer(minLength: 0)
+
+            // 800 rows is minutes of work and hundreds of calls. It used to be
+            // uninterruptible, and closing the sheet orphaned the task.
+            Button { stopRequested = true } label: {
+                Text(stopRequested ? "Stopping…" : "Stop after this show")
+                    .bingeLabel(14)
+                    .frame(maxWidth: .infinity, minHeight: BingeTheme.minTap, alignment: .leading)
+                    .padding(.horizontal, 18)
+                    .overlay(Rectangle().stroke(BingeTheme.ink, lineWidth: 1))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(stopRequested)
+            .padding(.horizontal, BingeTheme.gutter)
+            .padding(.top, 16).padding(.bottom, 22)
+        }
+    }
+
+    private var progress: Double {
+        guard !selected.isEmpty else { return 0 }
+        return min(1, Double(doneShows) / Double(selected.count))
+    }
+
+    private func tally(_ value: String, _ label: String, accent: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(value).bingeHeadline(26).foregroundStyle(accent ? BingeTheme.accent : BingeTheme.ink)
+            Text(label).bingeLabel(13).foregroundStyle(BingeTheme.inkMuted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14).padding(.vertical, 16)
+    }
+
+    // MARK: Result
+
+    private var result: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Import complete").bingeLabel(13).foregroundStyle(BingeTheme.accentTint)
+                Text(resultHeadline)
+                    .bingeDisplay(34)
+                    .foregroundStyle(BingeTheme.ground)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 12)
+                Text("Across \(showsTouched) show\(showsTouched == 1 ? "" : "s"). Your library just got real.")
+                    .bingeBody(14).foregroundStyle(BingeTheme.inkFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 12)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, BingeTheme.gutter)
+            .padding(.top, 22).padding(.bottom, 18)
+            .background(BingeTheme.ink)
+
+            if notFound > 0 || unplaced > 0 {
+                Text("What didn't land").bingeLabel(13)
+                    .foregroundStyle(BingeTheme.inkMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, BingeTheme.gutter)
+                    .padding(.top, 18).padding(.bottom, 6)
+
+                if notFound > 0 {
+                    didntLand("\(notFound)", "Shows we couldn't find",
+                              "Not in TMDB under that name. You can search for these by hand.",
+                              accent: true)
+                }
+                if unplaced > 0 {
+                    didntLand("\(unplaced)", "Episodes we couldn't place",
+                              "Show matched, but Netflix's episode name didn't. The show is in your library.")
+                }
+            }
+
+            Spacer(minLength: 0)
+            BingeRule(strong: true)
+
+            VStack(alignment: .leading, spacing: 10) {
+                if !proposals.isEmpty {
+                    primaryButton("Fill \(proposals.count) gap\(proposals.count == 1 ? "" : "s")") {
+                        phase = .gaps
+                    }
+                } else if notFound > 0 || unplaced > 0 {
+                    primaryButton("See the \(notFound + unplaced) issues") { phase = .log }
+                }
+                Button { dismiss() } label: {
+                    Text("Done").bingeLabel(14).foregroundStyle(BingeTheme.inkMuted)
+                        .padding(.vertical, 4).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, BingeTheme.gutter)
+            .padding(.top, 16).padding(.bottom, 22)
+        }
+    }
+
+    private var resultHeadline: String {
+        var parts: [String] = []
+        if matched > 0 { parts.append("\(matched) episode\(matched == 1 ? "" : "s")") }
+        if filmsAdded > 0 { parts.append("\(filmsAdded) film\(filmsAdded == 1 ? "" : "s")") }
+        if parts.isEmpty { return "Nothing new." }
+        return parts.joined(separator: "\nand ") + "."
+    }
+
+    private func didntLand(_ count: String, _ title: String, _ body: String, accent: Bool = false) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Text(count).bingeHeadline(24)
+                .foregroundStyle(accent ? BingeTheme.accent : BingeTheme.ink)
+                .frame(width: 34, alignment: .leading)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).bingeHeadline(15)
+                Text(body).bingeBody(13).foregroundStyle(BingeTheme.inkMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 14)
+        .overlay(alignment: .top) { BingeRule() }
+    }
+
+    // MARK: Gaps
+
+    private var gaps: some View {
+        VStack(spacing: 0) {
+            Text("\(proposals.reduce(0) { $0 + $1.episodes.count }) episodes we couldn't name sit between episodes you've watched. They're almost certainly the rows Netflix wrote differently.")
+                .bingeBody(14).foregroundStyle(BingeTheme.inkMuted)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 16)
+            BingeRule()
+
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(proposals) { p in
+                        Button {
+                            if acceptedProposals.contains(p.id) { acceptedProposals.remove(p.id) }
+                            else { acceptedProposals.insert(p.id) }
+                        } label: {
+                            HStack(alignment: .top, spacing: 13) {
+                                checkbox(acceptedProposals.contains(p.id)).padding(.top, 2)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(p.showName).bingeHeadline(16).lineLimit(1)
+                                    Text("Mark S\(p.season) \(p.range) watched").bingeBody(15)
+                                    Text(p.evidence).bingeBody(13).foregroundStyle(BingeTheme.inkFaint)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                .foregroundStyle(acceptedProposals.contains(p.id) ? BingeTheme.ink : BingeTheme.inkMuted)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 15)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        BingeRule()
+                    }
+                }
+            }
+
+            BingeRule(strong: true)
+            VStack(alignment: .leading, spacing: 10) {
+                primaryButton("Mark \(acceptedEpisodeCount) episode\(acceptedEpisodeCount == 1 ? "" : "s")") {
+                    Task { await applyGapFills() }
+                }
+                .opacity(acceptedProposals.isEmpty ? 0.45 : 1)
+                .allowsHitTesting(!acceptedProposals.isEmpty)
+                Button { phase = .log } label: {
+                    Text("Skip all").bingeLabel(14).foregroundStyle(BingeTheme.inkMuted)
+                        .padding(.vertical, 4).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, BingeTheme.gutter)
+            .padding(.top, 16).padding(.bottom, 22)
+        }
+    }
+
+    private var acceptedEpisodeCount: Int {
+        proposals.filter { acceptedProposals.contains($0.id) }.reduce(0) { $0 + $1.episodes.count }
+    }
+
+    // MARK: Log
+
+    private var log: some View {
+        Group {
+            if issues.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Nothing logged").bingeLabel(13).foregroundStyle(BingeTheme.inkMuted)
+                    Text("Every title from your last import found a home.")
+                        .bingeBody(14).foregroundStyle(BingeTheme.inkMuted)
                     Spacer()
                 }
-                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 18)
             } else {
-                List {
-                    ForEach(failedImports.sorted { $0.timestamp > $1.timestamp }, id: \.id) { failedImport in
-                        NavigationLink(destination: SearchView(initialSearchQuery: failedImport.title)) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(failedImport.title)
-                                    .fontWeight(.semibold)
-                                    .lineLimit(1)
-                                    .foregroundColor(.primary)
+                // ONE list, two sections — actionable first. Two Lists in a
+                // VStack was the old bug: the second was unreachable.
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        let missing = issues.filter { $0.kind == .notFound }
+                        let unplacedRows = issues.filter { $0.kind == .unplaced }
 
-                                HStack(spacing: 8) {
-                                    Text(formatDate(failedImport.timestamp))
-                                        .font(.caption)
-                                        .foregroundColor(.gray)
-
-                                    Spacer()
-
-                                    Text("Netflix")
-                                        .font(.caption)
-                                        .foregroundColor(.red)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Color.red.opacity(0.1))
-                                        .cornerRadius(4)
-
-                                    Image(systemName: "magnifyingglass")
-                                        .font(.caption)
-                                        .foregroundColor(.blue)
+                        if !missing.isEmpty {
+                            sectionHead("Not found · \(missing.count)", accent: true, hint: "Tap to search")
+                            ForEach(missing) { issue in
+                                Button { search(issue.title) } label: {
+                                    HStack(spacing: 12) {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(issue.title).bingeHeadline(16).lineLimit(1)
+                                            Text(sourceLine(issue)).bingeLabel(13)
+                                                .foregroundStyle(BingeTheme.inkMuted)
+                                        }
+                                        Spacer(minLength: 0)
+                                        Text("↗").bingeHeadline(16).foregroundStyle(BingeTheme.accent)
+                                    }
+                                    .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 15)
+                                    .contentShape(Rectangle())
                                 }
+                                .buttonStyle(.plain)
+                                BingeRule()
+                            }
+                        }
+
+                        if !unplacedRows.isEmpty {
+                            sectionHead("Couldn't place · \(unplacedRows.count)")
+                            ForEach(unplacedRows) { issue in
+                                VStack(alignment: .leading, spacing: 5) {
+                                    if let show = issue.showName {
+                                        Text(show).bingeLabel(13).foregroundStyle(BingeTheme.inkMuted)
+                                    }
+                                    // The raw CSV line, so you can see WHY.
+                                    Text(issue.title).bingeBody(15)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    Text("No episode by that name").bingeBody(13)
+                                        .foregroundStyle(BingeTheme.inkFaint)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 15)
+                                BingeRule()
                             }
                         }
                     }
+                    .padding(.bottom, 22)
                 }
             }
-
-            if !unmatchedEpisodes.isEmpty {
-                Divider()
-                    .padding(.vertical, 8)
-
-                Text("Unmatched Episodes (\(unmatchedEpisodes.count))")
-                    .fontWeight(.semibold)
-                    .padding(.horizontal)
-
-                List {
-                    ForEach(unmatchedEpisodes.sorted { $0.timestamp > $1.timestamp }, id: \.id) { unmatched in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(unmatched.showName)
-                                .fontWeight(.semibold)
-                                .font(.caption)
-                                .foregroundColor(.gray)
-
-                            Text(unmatched.csvTitle)
-                                .lineLimit(2)
-                                .foregroundColor(.primary)
-
-                            HStack {
-                                Text(formatDate(unmatched.timestamp))
-                                    .font(.caption2)
-                                    .foregroundColor(.gray)
-
-                                Spacer()
-
-                                Text("Episode not found")
-                                    .font(.caption2)
-                                    .foregroundColor(.orange)
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer()
         }
     }
 
-    private func handleFileSelection(_ result: Result<URL, Error>) {
+    private func sectionHead(_ title: String, accent: Bool = false, hint: String? = nil) -> some View {
+        HStack(spacing: 10) {
+            Text(title).bingeLabel(13)
+                .foregroundStyle(accent ? BingeTheme.accent : BingeTheme.inkMuted)
+            Rectangle().fill(BingeTheme.hairline).frame(height: 1)
+            if let hint {
+                Text(hint).bingeBody(13).foregroundStyle(BingeTheme.inkMuted)
+            }
+        }
+        .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 13)
+        .background(BingeTheme.ink.opacity(0.045))
+        .overlay(alignment: .top) { BingeRule(strong: true) }
+    }
+
+    private func sourceLine(_ issue: ImportIssue) -> String {
+        issue.source.capitalized
+    }
+
+    private func search(_ title: String) {
+        if let onSearch {
+            dismiss()
+            onSearch(title)
+        } else {
+            UIPasteboard.general.string = title
+        }
+    }
+
+    private func primaryButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Text(title).bingeLabel(14)
+                Spacer()
+                Text("→").bingeHeadline(16)
+            }
+            .foregroundStyle(BingeTheme.ground)
+            .padding(.horizontal, 18).padding(.vertical, 17)
+            .frame(maxWidth: .infinity)
+            .background(BingeTheme.accent)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: File
+
+    private func handleFile(_ result: Result<URL, Error>) {
         switch result {
         case .success(let url):
             guard url.startAccessingSecurityScopedResource() else {
-                error = "Unable to access file. Please try again."
+                error = "Unable to access that file."
                 return
             }
-
             defer { url.stopAccessingSecurityScopedResource() }
-
             do {
                 let content = try String(contentsOf: url, encoding: .utf8)
-                parsedEntries = try NetflixCSVParser.shared.parseCSV(content: content)
-                selectedEntries = Set(0..<parsedEntries.count)
-                error = nil
-
-                if parsedEntries.isEmpty {
-                    error = "No valid entries found in CSV. Make sure it's in Netflix format."
+                let entries = try NetflixCSVParser.shared.parseCSV(content: content)
+                guard !entries.isEmpty else {
+                    error = "No valid entries found. Make sure it's the Netflix viewing-activity CSV."
+                    return
                 }
+                group(entries)
             } catch {
-                self.error = "Failed to parse CSV: \(error.localizedDescription)"
+                self.error = "Couldn't parse that CSV: \(error.localizedDescription)"
             }
-
-        case .failure(let error):
-            self.error = "Failed to read file: \(error.localizedDescription)"
+        case .failure(let err):
+            error = "Couldn't read that file: \(err.localizedDescription)"
         }
     }
 
+    private func group(_ entries: [NetflixCSVParser.ParsedEntry]) {
+        var byShow: [String: [NetflixCSVParser.ParsedEntry]] = [:]
+        for entry in entries { byShow[entry.showName, default: []].append(entry) }
+        groups = byShow
+            .map { ImportShowGroup(showName: $0.key, entries: $0.value) }
+            .sorted { $0.entries.count > $1.entries.count }
+        selected = Set(groups.map(\.id))
+        phase = .preview
+    }
+
     private func loadTestData() {
-        let testCSV = """
+        let csv = """
         Title,Date Watched
         Dynasty: Season 4: Equal Justice for the Rich,8/4/26
         Ozark: Season 4: A Hard Way to Go,4/25/26
         Breaking Bad: Season 1: Pilot,2024-01-15
         Hit & Run: Part & Parcel,8/4/26
         """
-
         do {
-            parsedEntries = try NetflixCSVParser.shared.parseCSV(content: testCSV)
-            selectedEntries = Set(0..<parsedEntries.count)
-            error = nil
+            group(try NetflixCSVParser.shared.parseCSV(content: csv))
         } catch {
-            self.error = "Failed to parse test data: \(error.localizedDescription)"
+            self.error = "Couldn't parse the test data: \(error.localizedDescription)"
         }
     }
 
-    private func startImport() {
-        guard !selectedEntries.isEmpty else { return }
+    // MARK: Import
 
-        isImporting = true
-        importProgress = 0
-        totalItems = selectedEntries.count
-        error = nil
+    private func runImport() async {
+        guard let userId = supabase.currentUser?.id else {
+            error = "You're not signed in."
+            return
+        }
+        phase = .running
+        doneShows = 0; matched = 0; unplaced = 0; notFound = 0
+        filmsAdded = 0; showsTouched = 0; stopRequested = false
+        proposals = []; acceptedProposals = []
 
-        Task {
-            var matchedCount = 0  // Episodes actually inserted
-            var processedCount = 0  // CSV entries processed
-            var unmatchedCount = 0
-            var failedCount = 0
-            var newFailedImports: [FailedImport] = []
-            var newUnmatchedEpisodes: [UnmatchedEpisode] = []
-            let now = Date()
+        var newIssues: [ImportIssue] = []
+        let chosen = groups.filter { selected.contains($0.id) }
 
-            // Group entries by show name to avoid fetching the same show multiple times
-            var entriesByShow: [String: [NetflixCSVParser.ParsedEntry]] = [:]
-            for (index, entryIndex) in selectedEntries.sorted().enumerated() {
-                let entry = parsedEntries[entryIndex]
-                entriesByShow[entry.showName, default: []].append(entry)
-            }
+        for group in chosen {
+            if stopRequested { break }
+            currentShow = group.showName
+            let entry = group.entries[0]
 
-            print("🎬 Grouped \(selectedEntries.count) entries into \(entriesByShow.count) shows:")
-            for (showName, entries) in entriesByShow {
-                print("   - \(showName): \(entries.count) entries")
-                for entry in entries.prefix(2) {
-                    print("     • S\(entry.seasonNumber ?? 0)E\(entry.episodeNumber ?? 0): \(entry.title)")
+            do {
+                var results = try await tmdb.searchTV(query: group.showName)
+                if results.isEmpty, let first = group.showName.split(separator: " ").first {
+                    results = try await tmdb.searchTV(query: String(first))
                 }
-            }
+                if results.isEmpty {
+                    results = try await fuzzySearchTV(showName: group.showName,
+                                                      episodeTitle: extractEpisodeTitle(from: entry.title))
+                }
 
-            for (showName, entries) in entriesByShow {
-                let entry = entries.first! // Use first entry for this show
+                var chosenResult = results.first
+                if results.count > 1, let episodeTitle = extractEpisodeTitle(from: entry.title) {
+                    chosenResult = await findShowByEpisodeName(shows: results,
+                                                               episodeTitle: episodeTitle,
+                                                               seasonNumber: entry.seasonNumber) ?? results.first
+                }
 
-                do {
-                    print("📌 Processing \(showName): isShow=\(entry.isShow), \(entries.count) entries")
-                    // Always try TV first, regardless of CSV format—fallback to movies only if TV search fails
-                    var searchResults = try await tmdb.searchTV(query: entry.showName)
-
-                    if searchResults.isEmpty, let firstWord = entry.showName.split(separator: " ").first {
-                        searchResults = try await tmdb.searchTV(query: String(firstWord))
-                    }
-
-                    if searchResults.isEmpty {
-                        searchResults = try await fuzzySearchTV(
-                            showName: entry.showName,
-                            episodeTitle: extractEpisodeTitle(from: entry.title)
-                        )
-                    }
-
-                    // If multiple results, use episode name to find the right show
-                    var selectedResult = searchResults.first
-                    if searchResults.count > 1, let episodeTitle = extractEpisodeTitle(from: entry.title) {
-                        selectedResult = await findShowByEpisodeName(
-                            shows: searchResults,
-                            episodeTitle: episodeTitle,
-                            seasonNumber: entry.seasonNumber
-                        ) ?? searchResults.first
-                    }
-
-                    if let firstResult = selectedResult ?? searchResults.first {
-                            guard let userId = supabase.currentUser?.id else {
-                                newFailedImports.append(contentsOf: entries.map { FailedImport(title: $0.title, timestamp: now) })
-                                processedCount += entries.count
-                                importProgress = processedCount
-                                continue
-                            }
-
-                            // Check if this show is already in user's library to avoid duplicates
-                            let existingShows = (try? await supabase.fetchUserShows(userId: userId)) ?? []
-                            if !existingShows.contains(where: { $0.showId == firstResult.id }) {
-                                try await supabase.insertUserShow(
-                                    userId: userId,
-                                    showId: firstResult.id,
-                                    watchedDate: entry.date
-                                )
-                            }
-
-                            // Fetch show and seasons only ONCE per unique show
-                            let showDetail = try await tmdb.getTVShow(id: firstResult.id)
-                            let tvShow = TVShow(
-                                id: showDetail.id,
-                                tmdbId: showDetail.id,
-                                title: showDetail.name,
-                                overview: showDetail.overview,
-                                posterUrl: showDetail.imageUrl,
-                                firstAirDate: showDetail.firstAirDate,
-                                numberOfSeasons: showDetail.numberOfSeasons,
-                                numberOfEpisodes: showDetail.numberOfEpisodes,
-                                platforms: nil,
-                                runtime: nil
-                            )
-                            do {
-                                try await supabase.insertShow(show: tvShow)
-                            } catch {
-                                print("⚠️ Could not insert show: \(error)")
-                            }
-
-                            print("🎬 Processing \(showName): \(showDetail.numberOfSeasons) seasons, \(entries.count) CSV entries")
-                            entries.prefix(3).forEach { e in
-                                print("   - \(e.title) (S\(e.seasonNumber ?? 0)E\(e.episodeNumber ?? 0))")
-                            }
-
-                            do {
-                                var matchedEntries = Set<String>()  // Track which CSV entries matched
-                                var seasonTasks: [Task<SeasonDetail, Error>] = []
-                                for season in 1...showDetail.numberOfSeasons {
-                                    let task = Task {
-                                        return try await self.tmdb.getTVSeason(showId: firstResult.id, seasonNumber: season)
-                                    }
-                                    seasonTasks.append(task)
-                                }
-
-                                for seasonTask in seasonTasks {
-                                    let seasonDetail = try await seasonTask.value
-                                    for episodeDetail in seasonDetail.episodes {
-                                        // Check all entries for this show to find matches
-                                        for csvEntry in entries {
-                                            var isWatched = false
-                                            // First try exact season/episode match
-                                            if let season = csvEntry.seasonNumber, let episodeNum = csvEntry.episodeNumber {
-                                                isWatched = (season == episodeDetail.seasonNumber && episodeNum == episodeDetail.episodeNumber)
-                                                if isWatched {
-                                                    print("✅ Matched by season/episode: S\(season)E\(episodeNum)")
-                                                }
-                                            }
-
-                                            // If no exact match, try title matching (works when episode number is missing)
-                                            if !isWatched, let episodeTitle = extractEpisodeTitle(from: csvEntry.title) {
-                                                // Also check that season matches if we have it
-                                                let seasonMatches = csvEntry.seasonNumber == nil || csvEntry.seasonNumber == episodeDetail.seasonNumber
-                                                if seasonMatches {
-                                                    let tmdbName = episodeDetail.name.lowercased()
-                                                    let netflixTitle = episodeTitle.lowercased()
-                                                    isWatched = tmdbName.contains(netflixTitle) || netflixTitle.contains(tmdbName)
-                                                    if isWatched {
-                                                        print("📺 Matched S\(episodeDetail.seasonNumber)E\(episodeDetail.episodeNumber): '\(episodeDetail.name)' vs '\(episodeTitle)'")
-                                                    } else if episodeDetail.seasonNumber == 1 && episodeDetail.episodeNumber <= 3 {
-                                                        print("   ✗ No match: TMDB '\(tmdbName)' vs CSV '\(netflixTitle)'")
-                                                    }
-                                                }
-                                            }
-
-                                            if isWatched {
-                                                matchedEntries.insert(csvEntry.title)  // Mark this entry as matched
-                                                let tmdbEpisode = Episode(
-                                                    id: nil,
-                                                    showId: firstResult.id,
-                                                    tmdbId: episodeDetail.id,
-                                                    seasonNumber: episodeDetail.seasonNumber,
-                                                    episodeNumber: episodeDetail.episodeNumber,
-                                                    name: episodeDetail.name,
-                                                    overview: episodeDetail.overview ?? "",
-                                                    airDate: episodeDetail.airDate,
-                                                    userId: userId,
-                                                    watched: isWatched,
-                                                    watchedAt: isWatched ? csvEntry.date : nil,
-                                                    showTitle: showDetail.name
-                                                )
-
-                                                do {
-                                                    try await supabase.insertEpisode(episode: tmdbEpisode)
-                                                    matchedCount += 1
-                                                    print("✅ Inserted watched episode S\(episodeDetail.seasonNumber)E\(episodeDetail.episodeNumber): \(episodeDetail.name)")
-                                                } catch {
-                                                    print("⚠️ Could not insert episode S\(episodeDetail.seasonNumber)E\(episodeDetail.episodeNumber): \(error)")
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                // Track unmatched entries for this show
-                                for entry in entries {
-                                    if !matchedEntries.contains(entry.title) {
-                                        newUnmatchedEpisodes.append(UnmatchedEpisode(
-                                            showName: showName,
-                                            csvTitle: entry.title,
-                                            timestamp: now
-                                        ))
-                                        unmatchedCount += 1
-                                    }
-                                }
-                            } catch {
-                                print("❌ Could not fetch show episodes for \(showName): \(error)")
-                                newFailedImports.append(contentsOf: entries.map { FailedImport(title: $0.title, timestamp: now) })
-                            }
-
-                        processedCount += entries.count
-                        processedCount += entries.count
-                        importProgress = processedCount
+                if let show = chosenResult {
+                    let issues = try await importShow(show, group: group, userId: userId)
+                    newIssues.append(contentsOf: issues)
+                    showsTouched += 1
+                } else if !entry.isShow {
+                    if try await importFilm(group: group, userId: userId) {
+                        filmsAdded += 1
                     } else {
-                        // TV search failed, try movies only if entry looks like a movie (no season/episode info)
-                        if !entry.isShow {
-                            var searchResults = try await tmdb.searchMovie(query: entry.showName)
+                        newIssues.append(notFoundIssue(group.showName))
+                        notFound += 1
+                    }
+                } else {
+                    newIssues.append(notFoundIssue(group.showName))
+                    notFound += 1
+                }
+            } catch {
+                newIssues.append(notFoundIssue(group.showName))
+                notFound += 1
+            }
 
-                        if searchResults.isEmpty, let firstWord = entry.showName.split(separator: " ").first {
-                            searchResults = try await tmdb.searchMovie(query: String(firstWord))
-                        }
+            // Counted ONCE, and in shows — the old code incremented twice in a
+            // row here, so the bar overshot.
+            doneShows += 1
+        }
 
-                        if searchResults.isEmpty {
-                            searchResults = try await fuzzySearchMovie(movieName: entry.showName)
-                        }
+        currentShow = ""
+        if !newIssues.isEmpty {
+            try? await supabase.insertImportIssues(userId: userId, issues: newIssues)
+        }
+        await loadIssues()
+        phase = .result
+    }
 
-                        if let firstResult = searchResults.first {
-                            guard let userId = supabase.currentUser?.id else {
-                                newFailedImports.append(contentsOf: entries.map { FailedImport(title: $0.title, timestamp: now) })
-                                processedCount += entries.count
-                                importProgress = processedCount
-                                continue
-                            }
+    /// Returns the issues this show produced, and accumulates a gap proposal if
+    /// the unplaced rows account for a bounded hole.
+    private func importShow(_ show: TVSearchResult,
+                            group: ImportShowGroup,
+                            userId: String) async throws -> [ImportIssue] {
+        let detail = try await tmdb.getTVShow(id: show.id)
 
-                            let movie = Movie(
-                                id: firstResult.id,
-                                tmdbId: firstResult.id,
-                                title: firstResult.title,
-                                overview: firstResult.overview ?? "",
-                                posterUrl: firstResult.imageUrl,
-                                releaseDate: firstResult.releaseDate,
-                                runtime: nil,
-                                platforms: nil
-                            )
-                            try await supabase.insertMovie(movie: movie)
+        let existing = (try? await supabase.fetchUserShows(userId: userId)) ?? []
+        if !existing.contains(where: { $0.showId == show.id }) {
+            try await supabase.insertUserShow(userId: userId,
+                                              showId: show.id,
+                                              watchedDate: group.entries[0].date)
+        }
 
-                            // Check if this movie is already in user's library to avoid duplicates
-                            let existingMovies = (try? await supabase.fetchUserMovies(userId: userId)) ?? []
-                            if !existingMovies.contains(where: { $0.movieId == firstResult.id }) {
-                                try await supabase.insertUserMovie(userId: userId, movieId: firstResult.id, watchedDate: entry.date)
-                            }
-                            processedCount += entries.count
-                            processedCount += entries.count
-                            importProgress = processedCount
-                        } else {
-                            newFailedImports.append(contentsOf: entries.map { FailedImport(title: $0.title, timestamp: now) })
-                            processedCount += entries.count
-                            importProgress = processedCount
-                        }
-                        } else {
-                            // Not a show and not a movie—failed to match
-                            newFailedImports.append(contentsOf: entries.map { FailedImport(title: $0.title, timestamp: now) })
-                            processedCount += entries.count
-                            importProgress = processedCount
+        let tvShow = TVShow(id: detail.id, tmdbId: detail.id, title: detail.name,
+                            overview: detail.overview, posterUrl: detail.imageUrl,
+                            firstAirDate: detail.firstAirDate,
+                            numberOfSeasons: detail.numberOfSeasons,
+                            numberOfEpisodes: detail.numberOfEpisodes,
+                            platforms: nil, runtime: nil)
+        try? await supabase.insertShow(show: tvShow)
+
+        guard detail.numberOfSeasons > 0 else { return [] }
+
+        var matchedTitles = Set<String>()
+        /// season → episode numbers we marked watched, for gap detection.
+        var watchedBySeason: [Int: Set<Int>] = [:]
+
+        var tasks: [Task<SeasonDetail, Error>] = []
+        for season in 1...detail.numberOfSeasons {
+            tasks.append(Task { try await self.tmdb.getTVSeason(showId: show.id, seasonNumber: season) })
+        }
+
+        for task in tasks {
+            guard let seasonDetail = try? await task.value else { continue }
+            for episodeDetail in seasonDetail.episodes {
+                for csvEntry in group.entries {
+                    var isWatched = false
+
+                    if let season = csvEntry.seasonNumber, let number = csvEntry.episodeNumber {
+                        isWatched = (season == episodeDetail.seasonNumber && number == episodeDetail.episodeNumber)
+                    }
+                    if !isWatched, let episodeTitle = extractEpisodeTitle(from: csvEntry.title) {
+                        let seasonMatches = csvEntry.seasonNumber == nil
+                            || csvEntry.seasonNumber == episodeDetail.seasonNumber
+                        if seasonMatches {
+                            let a = episodeDetail.name.lowercased()
+                            let b = episodeTitle.lowercased()
+                            isWatched = a.contains(b) || b.contains(a)
                         }
                     }
-                } catch {
-                    newFailedImports.append(contentsOf: entries.map { FailedImport(title: $0.title, timestamp: now) })
-                    processedCount += entries.count
-                    importProgress = processedCount
+                    guard isWatched else { continue }
+
+                    matchedTitles.insert(csvEntry.title)
+                    watchedBySeason[episodeDetail.seasonNumber, default: []].insert(episodeDetail.episodeNumber)
+
+                    let episode = Episode(id: nil, showId: show.id, tmdbId: episodeDetail.id,
+                                          seasonNumber: episodeDetail.seasonNumber,
+                                          episodeNumber: episodeDetail.episodeNumber,
+                                          name: episodeDetail.name,
+                                          overview: episodeDetail.overview ?? "",
+                                          airDate: episodeDetail.airDate,
+                                          userId: userId, watched: true,
+                                          watchedAt: csvEntry.date, showTitle: detail.name)
+                    if (try? await supabase.insertEpisode(episode: episode)) != nil {
+                        matched += 1
+                    }
                 }
             }
+        }
 
-            DispatchQueue.main.async {
-                isImporting = false
-                failedImports.append(contentsOf: newFailedImports)
-                unmatchedEpisodes.append(contentsOf: newUnmatchedEpisodes)
-                saveFailedImports()
+        let leftovers = group.entries.filter { !matchedTitles.contains($0.title) }
+        unplaced += leftovers.count
 
-                let totalProcessed = self.selectedEntries.count
-                var message = "📊 Processed \(totalProcessed) items"
-                if matchedCount > 0 {
-                    message += "\n✅ \(matchedCount) episodes matched"
-                }
-                if unmatchedCount > 0 {
-                    message += "\n⚠️ \(unmatchedCount) episodes not matched (check History)"
-                }
-                if newFailedImports.count > 0 {
-                    message += "\n❌ \(newFailedImports.count) items failed to find show"
-                }
-                successMessage = message
-            }
+        proposals.append(contentsOf: proposeGapFills(showId: show.id,
+                                                    showName: group.showName,
+                                                    watchedBySeason: watchedBySeason,
+                                                    leftovers: leftovers))
+
+        return leftovers.map {
+            ImportIssue(id: nil, kind: .unplaced, title: $0.title,
+                        showName: group.showName, source: "netflix", createdAt: nil)
         }
     }
 
-    private func resetImport() {
-        parsedEntries = []
-        selectedEntries = []
-        importProgress = 0
-        totalItems = 0
-        error = nil
+    private func importFilm(group: ImportShowGroup, userId: String) async throws -> Bool {
+        var results = try await tmdb.searchMovie(query: group.showName)
+        if results.isEmpty, let first = group.showName.split(separator: " ").first {
+            results = try await tmdb.searchMovie(query: String(first))
+        }
+        if results.isEmpty {
+            results = try await fuzzySearchMovie(movieName: group.showName)
+        }
+        guard let found = results.first else { return false }
+
+        let movie = Movie(id: found.id, tmdbId: found.id, title: found.title,
+                          overview: found.overview ?? "", posterUrl: found.imageUrl,
+                          releaseDate: found.releaseDate, runtime: nil, platforms: nil)
+        try? await supabase.insertMovie(movie: movie)
+
+        let existing = (try? await supabase.fetchUserMovies(userId: userId)) ?? []
+        if !existing.contains(where: { $0.movieId == found.id }) {
+            try await supabase.insertUserMovie(userId: userId, movieId: found.id,
+                                               watchedDate: group.entries[0].date)
+        }
+        return true
     }
+
+    private func notFoundIssue(_ title: String) -> ImportIssue {
+        ImportIssue(id: nil, kind: .notFound, title: title,
+                    showName: nil, source: "netflix", createdAt: nil)
+    }
+
+    // MARK: Gap filling
+
+    /// The rule, all five conditions required:
+    /// · the hole is inside ONE season — never across a boundary, where a real
+    ///   break is ordinary;
+    /// · it's bounded on both sides by watched episodes — a trailing hole is
+    ///   just where you stopped;
+    /// · it's `maxGap` episodes or fewer;
+    /// · the unplaced CSV rows for that season ACCOUNT for it. This is the
+    ///   load-bearing condition: no unplaced rows means you genuinely skipped
+    ///   the episode, and a gap on its own is not evidence of anything;
+    /// · nothing is applied silently — this only ever builds a proposal.
+    private static let maxGap = 3
+
+    private func proposeGapFills(showId: Int,
+                                 showName: String,
+                                 watchedBySeason: [Int: Set<Int>],
+                                 leftovers: [NetflixCSVParser.ParsedEntry]) -> [GapProposal] {
+        var out: [GapProposal] = []
+
+        for (season, watched) in watchedBySeason {
+            guard watched.count >= 2 else { continue }
+            let sorted = watched.sorted()
+
+            // Rows Netflix gave us for this season that we couldn't place. A row
+            // with no season stated could belong anywhere, so it counts too.
+            let seasonLeftovers = leftovers.filter { $0.seasonNumber == season || $0.seasonNumber == nil }
+            guard !seasonLeftovers.isEmpty else { continue }
+            var budget = seasonLeftovers.count
+            let date = seasonLeftovers[0].date
+
+            for (index, low) in sorted.enumerated() where index + 1 < sorted.count {
+                let high = sorted[index + 1]
+                let gap = high - low - 1
+                guard gap > 0, gap <= Self.maxGap, gap <= budget else { continue }
+                budget -= gap
+                out.append(GapProposal(tmdbShowId: showId,
+                                       showName: showName,
+                                       season: season,
+                                       episodes: Array((low + 1)...(high - 1)),
+                                       unplacedCount: seasonLeftovers.count,
+                                       watchedDate: date))
+            }
+        }
+
+        return out.sorted { ($0.season, $0.episodes.first ?? 0) < ($1.season, $1.episodes.first ?? 0) }
+    }
+
+    private func applyGapFills() async {
+        guard let userId = supabase.currentUser?.id else { return }
+        let accepted = proposals.filter { acceptedProposals.contains($0.id) }
+
+        for proposal in accepted {
+            guard let seasonDetail = try? await tmdb.getTVSeason(showId: proposal.tmdbShowId,
+                                                                 seasonNumber: proposal.season)
+            else { continue }
+            for episodeDetail in seasonDetail.episodes where proposal.episodes.contains(episodeDetail.episodeNumber) {
+                let episode = Episode(id: nil, showId: proposal.tmdbShowId, tmdbId: episodeDetail.id,
+                                      seasonNumber: episodeDetail.seasonNumber,
+                                      episodeNumber: episodeDetail.episodeNumber,
+                                      name: episodeDetail.name,
+                                      overview: episodeDetail.overview ?? "",
+                                      airDate: episodeDetail.airDate,
+                                      userId: userId, watched: true,
+                                      watchedAt: proposal.watchedDate,
+                                      showTitle: proposal.showName)
+                try? await supabase.insertEpisode(episode: episode)
+                matched += 1
+            }
+        }
+        phase = .log
+    }
+
+    // MARK: Log storage
+
+    private func loadIssues() async {
+        guard let userId = supabase.currentUser?.id else { return }
+        issues = (try? await supabase.fetchImportIssues(userId: userId)) ?? []
+    }
+
+    private func clearIssues() async {
+        guard let userId = supabase.currentUser?.id else { return }
+        try? await supabase.clearImportIssues(userId: userId)
+        issues = []
+    }
+
+    // MARK: Matching helpers (unchanged)
 
     private func fuzzySearchTV(showName: String, episodeTitle: String?) async throws -> [TVSearchResult] {
-        var results: [TVSearchResult] = []
-
-        if let episodeTitle = episodeTitle, !episodeTitle.isEmpty {
-            let combined = "\(showName) \(episodeTitle)"
-            results = try await tmdb.searchTV(query: combined)
-            if !results.isEmpty {
-                return results
-            }
+        if let episodeTitle, !episodeTitle.isEmpty {
+            let results = try await tmdb.searchTV(query: "\(showName) \(episodeTitle)")
+            if !results.isEmpty { return results }
         }
-
-        let cleaned = showName
-            .lowercased()
+        let cleaned = showName.lowercased()
             .replacingOccurrences(of: #"[&-:,!?]"#, with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
-
         if !cleaned.isEmpty && cleaned != showName.lowercased() {
-            results = try await tmdb.searchTV(query: cleaned)
-            if !results.isEmpty {
-                return results
-            }
+            let results = try await tmdb.searchTV(query: cleaned)
+            if !results.isEmpty { return results }
         }
-
         let noNumbers = cleaned
             .replacingOccurrences(of: #"\d+"#, with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
-
         if !noNumbers.isEmpty && noNumbers != cleaned {
-            results = try await tmdb.searchTV(query: noNumbers)
+            return try await tmdb.searchTV(query: noNumbers)
         }
-
-        return results
+        return []
     }
 
     private func fuzzySearchMovie(movieName: String) async throws -> [MovieSearchResult] {
-        var results: [MovieSearchResult] = []
-
-        let cleaned = movieName
-            .lowercased()
+        let cleaned = movieName.lowercased()
             .replacingOccurrences(of: #"[&-:,!?]"#, with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
-
         if !cleaned.isEmpty && cleaned != movieName.lowercased() {
-            results = try await tmdb.searchMovie(query: cleaned)
-            if !results.isEmpty {
-                return results
-            }
+            let results = try await tmdb.searchMovie(query: cleaned)
+            if !results.isEmpty { return results }
         }
-
         let noNumbers = cleaned
             .replacingOccurrences(of: #"\d+"#, with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
-
         if !noNumbers.isEmpty && noNumbers != cleaned {
-            results = try await tmdb.searchMovie(query: noNumbers)
+            return try await tmdb.searchMovie(query: noNumbers)
         }
-
-        return results
+        return []
     }
 
-    private func findShowByEpisodeName(shows: [TVSearchResult], episodeTitle: String, seasonNumber: Int?) async -> TVSearchResult? {
+    private func findShowByEpisodeName(shows: [TVSearchResult],
+                                       episodeTitle: String,
+                                       seasonNumber: Int?) async -> TVSearchResult? {
         for show in shows {
-            do {
-                let showDetail = try await tmdb.getTVShow(id: show.id)
-                
-                // Try the specific season from Netflix, or up to season 5
-                let seasons = seasonNumber.map { [$0] } ?? (1...min(showDetail.numberOfSeasons, 5)).map { $0 }
-                
-                for season in seasons {
-                    if season > showDetail.numberOfSeasons { continue }
-                    let seasonDetail = try await tmdb.getTVSeason(showId: show.id, seasonNumber: season)
-                    
-                    for episode in seasonDetail.episodes {
-                        let tmdbName = episode.name.lowercased()
-                        let netflixName = episodeTitle.lowercased()
-                        
-                        if tmdbName.contains(netflixName) || netflixName.contains(tmdbName) {
-                            print("✅ Episode '\(episodeTitle)' matched in \(show.name)")
-                            return show
-                        }
-                    }
+            guard let detail = try? await tmdb.getTVShow(id: show.id) else { continue }
+            let seasons = seasonNumber.map { [$0] } ?? Array(1...min(max(detail.numberOfSeasons, 1), 5))
+            for season in seasons where season <= detail.numberOfSeasons {
+                guard let seasonDetail = try? await tmdb.getTVSeason(showId: show.id, seasonNumber: season)
+                else { continue }
+                for episode in seasonDetail.episodes {
+                    let a = episode.name.lowercased()
+                    let b = episodeTitle.lowercased()
+                    if a.contains(b) || b.contains(a) { return show }
                 }
-            } catch {
-                continue
             }
         }
         return nil
@@ -798,154 +1057,41 @@ struct NetflixImportView: View {
 
     private func extractEpisodeTitle(from title: String) -> String? {
         let parts = title.split(separator: ":")
-        if parts.count >= 2 {
-            // Return the last part (works for both "Show: Episode" and "Show: Season X: Episode")
-            return String(parts.last ?? "").trimmingCharacters(in: .whitespaces)
-        }
-        return nil
-    }
-
-    private func saveFailedImports() {
-        if let encoded = try? JSONEncoder().encode(failedImports) {
-            UserDefaults.standard.set(encoded, forKey: "failedImports")
-        }
-    }
-
-    private func loadFailedImports() {
-        if let data = UserDefaults.standard.data(forKey: "failedImports"),
-           let decoded = try? JSONDecoder().decode([FailedImport].self, from: data) {
-            failedImports = decoded
-        }
-    }
-
-    private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        return formatter.string(from: date)
+        guard parts.count >= 2 else { return nil }
+        return String(parts.last ?? "").trimmingCharacters(in: .whitespaces)
     }
 }
 
-struct FailedImport: Codable, Identifiable {
-    let id = UUID()
-    let title: String
-    let timestamp: Date
-
-    enum CodingKeys: String, CodingKey {
-        case title, timestamp
-    }
-}
-
-struct UnmatchedEpisode: Codable, Identifiable {
-    let id = UUID()
-    let showName: String
-    let csvTitle: String
-    let timestamp: Date
-
-    enum CodingKeys: String, CodingKey {
-        case showName, csvTitle, timestamp
-    }
-}
-
-struct ImportEntryRow: View {
-    let entry: NetflixCSVParser.ParsedEntry
-    let isSelected: Bool
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                .foregroundColor(isSelected ? .blue : .gray)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(entry.title)
-                    .fontWeight(.semibold)
-                    .lineLimit(2)
-
-                HStack(spacing: 8) {
-                    Text(entry.date)
-                        .font(.caption)
-                        .foregroundColor(.gray)
-
-                    if entry.isShow {
-                        Text("TV Show")
-                            .font(.caption2)
-                            .foregroundColor(.blue)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 2)
-                            .background(Color.blue.opacity(0.1))
-                            .cornerRadius(3)
-                    }
-                }
-            }
-
-            Spacer()
-        }
-        .padding(.vertical, 4)
-    }
-}
-
-struct ImportIssuePayload: Codable {
-    let type: String  // "unmatched" or "failed"
-    let showName: String
-    let csvTitle: String
-
-    enum CodingKeys: String, CodingKey {
-        case type
-        case showName = "show_name"
-        case csvTitle = "csv_title"
-    }
-}
-
-struct ImportIssue: Codable, Identifiable {
-    let id = UUID()
-    let type: String  // "unmatched" or "failed"
-    let showName: String
-    let csvTitle: String
-    let createdAt: Date
-
-    enum CodingKeys: String, CodingKey {
-        case type, showName, csvTitle
-        case createdAt = "created_at"
-    }
-}
-
-/*
- SQL to create import_issues table:
-
- CREATE TABLE import_issues (
-   id BIGSERIAL PRIMARY KEY,
-   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-   type TEXT NOT NULL CHECK (type IN ('unmatched', 'failed')),
-   show_name TEXT NOT NULL,
-   csv_title TEXT NOT NULL,
-   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-   FOREIGN KEY (user_id) REFERENCES auth.users(id)
- );
-
- CREATE INDEX idx_import_issues_user_created ON import_issues(user_id, created_at DESC);
- ALTER TABLE import_issues ENABLE ROW LEVEL SECURITY;
- CREATE POLICY import_issues_own ON import_issues FOR ALL USING (auth.uid() = user_id);
- */
-
-struct PrimeVideoImportView: View {
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "video.fill")
-                .font(.system(size: 60))
-                .foregroundColor(.blue)
-
-            Text("Coming Soon")
-                .font(.title2)
-                .fontWeight(.bold)
-
-            Text("Prime Video import support will be available soon")
-                .foregroundColor(.gray)
-                .multilineTextAlignment(.center)
-
-            Spacer()
-        }
-        .padding()
-    }
-}
+//  ─────────────────────────────────────────────────────────────────────────
+//  BACKEND — one table and three methods.
+//
+//  create table import_issues (
+//    id         bigint generated by default as identity primary key,
+//    user_id    uuid not null references auth.users(id) on delete cascade,
+//    kind       text not null check (kind in ('not_found','unplaced')),
+//    title      text not null,
+//    show_name  text,
+//    source     text not null default 'netflix',
+//    created_at timestamptz not null default now()
+//  );
+//  alter table import_issues enable row level security;
+//  create policy "own rows" on import_issues for all
+//    using (auth.uid() = user_id) with check (auth.uid() = user_id);
+//  create index import_issues_user_idx on import_issues (user_id, created_at desc);
+//
+//  Then, in SupabaseService — the same insert/fetch/delete shapes the file
+//  already uses everywhere else:
+//
+//    func insertImportIssues(userId: String, issues: [ImportIssue]) async throws
+//      → POST /rest/v1/import_issues with the array, user_id stamped on each.
+//        One request, not one per row: an import can produce hundreds.
+//
+//    func fetchImportIssues(userId: String) async throws -> [ImportIssue]
+//      → GET /rest/v1/import_issues?user_id=eq.\(userId)&order=created_at.desc
+//
+//    func clearImportIssues(userId: String) async throws
+//      → deleteRequest(endpoint: ".../import_issues?user_id=eq.\(userId)")
+//  ─────────────────────────────────────────────────────────────────────────
 
 #Preview {
     ImportManagementView()

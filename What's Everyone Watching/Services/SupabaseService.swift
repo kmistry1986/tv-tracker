@@ -1304,16 +1304,17 @@ class SupabaseService: NSObject, ObservableObject {
 
     // MARK: - Import Issues
 
-    func insertImportIssues(userId: String, issues: [ImportIssuePayload]) async throws {
+    func insertImportIssues(userId: String, issues: [ImportIssue]) async throws {
         guard !issues.isEmpty else { return }
 
-        // Stamp user_id on each issue
-        let issuesWithUserId = issues.map { issue in
+        // Build payload: stamp user_id on each issue, map fields per ImportIssue.CodingKeys
+        let payload = issues.map { issue in
             [
                 "user_id": userId,
-                "type": issue.type,
+                "kind": issue.kind.rawValue,
+                "title": issue.title,
                 "show_name": issue.showName,
-                "csv_title": issue.csvTitle
+                "source": issue.source
             ]
         }
 
@@ -1327,7 +1328,7 @@ class SupabaseService: NSObject, ObservableObject {
 
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .useDefaultKeys
-        request.httpBody = try encoder.encode(issuesWithUserId)
+        request.httpBody = try encoder.encode(payload)
 
         let (_, response) = try await URLSession.shared.data(for: request)
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -1337,7 +1338,7 @@ class SupabaseService: NSObject, ObservableObject {
         }
     }
 
-    func fetchImportIssues(userId: String) async throws -> [ImportIssuePayload] {
+    func fetchImportIssues(userId: String) async throws -> [ImportIssue] {
         let endpoint = "rest/v1/import_issues?user_id=eq.\(userId)&order=created_at.desc"
         return try await fetch(endpoint: endpoint)
     }
