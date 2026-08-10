@@ -107,7 +107,7 @@ struct BingeMainTabView: View {
 struct BingeFriendsTab: View {
     @Binding var tab: BingeTab
     @State private var showPeople = false
-    @StateObject private var engine = BingeFriendsEngine()
+    @StateObject private var engine = UsersEngine()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -141,7 +141,7 @@ struct BingeFriendsTab: View {
             .padding(.horizontal, BingeTheme.gutter).padding(.top, 8).padding(.bottom, 12)
             BingeRule(strong: true)
 
-            BingeFriendsFeed(engine: engine, tab: $tab, onFindPeople: { showPeople = true })
+            UsersFeed(engine: engine, tab: $tab, onFindPeople: { showPeople = true })
         }
         .sheet(isPresented: $showPeople) {
             NavigationStack {

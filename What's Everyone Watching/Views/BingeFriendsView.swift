@@ -1,4 +1,4 @@
-//  BingeFriendsView.swift
+//  UsersView.swift
 //  The 3a Friends feed, wired to SupabaseService.
 //
 //  Builds the feed from friends' rated shows (getFriendRatings) rather than
@@ -41,7 +41,7 @@ struct BingeFeedEntry: Identifiable {
 }
 
 @MainActor
-final class BingeFriendsEngine: ObservableObject {
+final class UsersEngine: ObservableObject {
     @Published var friends: [User] = []
     @Published var entries: [BingeFeedEntry] = []
     @Published var suggestions: [UserProfile] = []
@@ -60,6 +60,11 @@ final class BingeFriendsEngine: ObservableObject {
 
     /// friend id → the show they're currently watching, for the people strip.
     @Published var nowWatching: [String: TVShow] = [:]
+
+    /// Every show each friend has going. The strip is one card per SHOW, not
+    /// per person — someone watching three things is three cards, because a
+    /// card that stood for a person could only ever name one of them.
+    @Published var nowWatchingAll: [String: [TVShow]] = [:]
 
     func load() async {
         guard let userId = supabase.currentUser?.id else { return }
@@ -136,14 +141,20 @@ final class BingeFriendsEngine: ObservableObject {
 
         // Build "Watching right now" from currently-watching shows, not from completed feed
         var latest: [String: TVShow] = [:]
+        var all: [String: [TVShow]] = [:]
         let currentUserId = supabase.currentUser?.id ?? ""
         for friend in friends where friend.id != currentUserId {
             let currentlyWatching = (try? await supabase.getFriendCurrentlyWatching(friendId: friend.id)) ?? []
             if let show = currentlyWatching.first {
                 latest[friend.id] = show
             }
+            // Capped at three per person so one heavy watcher can't own the strip.
+            if !currentlyWatching.isEmpty {
+                all[friend.id] = Array(currentlyWatching.prefix(3))
+            }
         }
         nowWatching = latest
+        nowWatchingAll = all
         sharedShow = byShow.values.first(where: { $0.1.count >= 2 }).map { ($0.0, $0.1) }
     }
 
@@ -220,8 +231,8 @@ final class BingeFriendsEngine: ObservableObject {
 
 // MARK: - Feed
 
-struct BingeFriendsFeed: View {
-    @ObservedObject var engine: BingeFriendsEngine
+struct UsersFeed: View {
+    @ObservedObject var engine: UsersEngine
     @Binding var tab: BingeTab
     var onFindPeople: () -> Void = {}
 
@@ -341,65 +352,18 @@ struct BingeFriendsFeed: View {
     private var feed: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                if !engine.friends.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
+                if !nowCards.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
                         Text("Watching right now").bingeLabel(11).foregroundStyle(BingeTheme.inkMuted)
                         ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 12) {
-                                ForEach(Array(engine.friends.enumerated()), id: \.element.id) { index, f in
-                                    VStack(alignment: .center, spacing: 6) {
-                                        ZStack(alignment: .topLeading) {
-                                            // Poster thumbnail
-                                            if let posterUrl = engine.nowWatching[f.id]?.posterUrl,
-                                               let url = URL(string: posterUrl) {
-                                                AsyncImage(url: url) { phase in
-                                                    switch phase {
-                                                    case .success(let image):
-                                                        image
-                                                            .resizable()
-                                                            .aspectRatio(contentMode: .fill)
-                                                            .frame(width: 60, height: 90)
-                                                            .clipped()
-                                                    default:
-                                                        Rectangle()
-                                                            .fill(BingeTheme.hairline)
-                                                            .frame(width: 60, height: 90)
-                                                    }
-                                                }
-                                            } else {
-                                                Rectangle()
-                                                    .fill(BingeTheme.hairline)
-                                                    .frame(width: 60, height: 90)
-                                            }
-
-                                            // Friend initials badge
-                                            Text(initials(f.name))
-                                                .bingeHeadline(10)
-                                                .frame(width: 28, height: 28)
-                                                .background(tileFill(index))
-                                                .foregroundStyle(tileInk(index))
-                                                .padding(4)
-                                        }
-
-                                        // Show title
-                                        if let show = engine.nowWatching[f.id] {
-                                            Text(show.title)
-                                                .bingeBody(9)
-                                                .foregroundStyle(BingeTheme.ink)
-                                                .frame(width: 68, alignment: .center)
-                                                .lineLimit(2)
-                                        } else {
-                                            Text(f.name.split(separator: " ").first.map(String.init) ?? f.name)
-                                                .bingeBody(9)
-                                                .foregroundStyle(BingeTheme.inkMuted)
-                                                .frame(width: 68, alignment: .center)
-                                                .lineLimit(2)
-                                        }
-                                    }
+                            HStack(alignment: .top, spacing: 12) {
+                                ForEach(Array(nowCards.enumerated()), id: \.offset) { _, item in
+                                    nowCard(item.friend, show: item.show)
                                 }
                             }
-                            .padding(.horizontal, 4)
+                            .padding(.horizontal, BingeTheme.gutter)
                         }
+                        .padding(.horizontal, -BingeTheme.gutter)
                     }
                     .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 16)
                     BingeRule(strong: true)
@@ -444,6 +408,71 @@ struct BingeFriendsFeed: View {
         }
     }
 
+    // MARK: - Watching right now
+
+    /// One card per SHOW, not per person — a card that stood for a person could
+    /// only ever name one of the things they're watching. Someone with three
+    /// shows going gets three cards.
+    private var nowCards: [(friend: User, show: TVShow)] {
+        engine.friends.flatMap { f in
+            (engine.nowWatchingAll[f.id] ?? []).map { (friend: f, show: $0) }
+        }
+    }
+
+    /// 21a. The poster is the tile and the person is the caption — the right way
+    /// round, since a poster is what the eye recognises instantly and a name is
+    /// the small print. 104pt gives a title two full lines, which the old 50pt
+    /// column never could: "Silo" fitted and nothing else did.
+    private func nowCard(_ f: User, show: TVShow) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack(alignment: .bottomLeading) {
+                poster(show)
+                Text(initials(f.name))
+                    .bingeLabel(9)
+                    .foregroundStyle(BingeTheme.ground)
+                    .padding(.horizontal, 7).padding(.vertical, 4)
+                    .background(BingeTheme.ink)
+            }
+            .frame(width: 104, height: 148)
+            .clipped()
+
+            // Fixed two-line slot: with ragged title heights the captions below
+            // would sit on three different baselines, which in this system reads
+            // as broken rather than considered.
+            Text(show.title)
+                .bingeBody(12)
+                .foregroundStyle(BingeTheme.ink)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 104, height: 32, alignment: .topLeading)
+
+            Text(f.name.split(separator: " ").first.map(String.init) ?? f.name)
+                .bingeLabel(10)
+                .foregroundStyle(BingeTheme.inkMuted)
+                .lineLimit(1)
+                .frame(width: 104, alignment: .leading)
+        }
+        .frame(width: 104, alignment: .leading)
+    }
+
+    /// Posters are 2:3, so this slot matches them and nothing is cropped.
+    @ViewBuilder
+    private func poster(_ show: TVShow) -> some View {
+        if let urlString = show.posterUrl, let url = URL(string: urlString) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable().aspectRatio(contentMode: .fill)
+                        .frame(width: 104, height: 148)
+                default:
+                    Rectangle().fill(BingeTheme.hairline)
+                }
+            }
+        } else {
+            Rectangle().fill(BingeTheme.hairline)
+        }
+    }
+
     /// The strip alternates weight so a row of initials reads as people rather
     /// than a barcode. Accent appears once every four, never more.
     private func tileFill(_ index: Int) -> Color {
@@ -468,7 +497,7 @@ struct BingeFriendsFeed: View {
 // MARK: - People
 
 struct BingePeopleTab: View {
-    @ObservedObject var engine: BingeFriendsEngine
+    @ObservedObject var engine: UsersEngine
 
     var body: some View {
         VStack(spacing: 0) {
