@@ -56,6 +56,14 @@ struct BingeShowDetailView: View {
         !seasonEpisodes.isEmpty && seasonEpisodes.allSatisfy { watchedTmdbIds.contains($0.id) }
     }
 
+    private var nextUnwatchedEpisode: EpisodeDetail? {
+        // Return the first unwatched episode in air date order
+        allEpisodes
+            .filter { !watchedTmdbIds.contains($0.id) }
+            .sorted { ($0.seasonNumber, $0.episodeNumber) < ($1.seasonNumber, $1.episodeNumber) }
+            .first
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             topBar
@@ -193,8 +201,20 @@ struct BingeShowDetailView: View {
     private var progressBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
-                Text("\(watchedCount) of \(totalCount) episodes")
-                    .bingeHeadline(16)
+                if let next = nextUnwatchedEpisode {
+                    // Show next episode for partially watched shows
+                    Text("Next: S\(next.seasonNumber)E\(next.episodeNumber) · \(next.name)")
+                        .bingeHeadline(16)
+                        .lineLimit(1)
+                } else if watchedCount == totalCount && totalCount > 0 {
+                    // Show "All caught up" for fully watched
+                    Text("All caught up!")
+                        .bingeHeadline(16)
+                } else {
+                    // Show count for not started
+                    Text("\(watchedCount) of \(totalCount) episodes")
+                        .bingeHeadline(16)
+                }
                 Spacer()
                 Text(totalCount == 0 ? "—" : "\(Int(fraction * 100))%")
                     .bingeLabel(11).foregroundStyle(BingeTheme.inkMuted)
