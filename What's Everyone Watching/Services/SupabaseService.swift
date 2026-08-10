@@ -941,6 +941,13 @@ class SupabaseService: NSObject, ObservableObject {
     // MARK: - Friends
 
     func sendFriendRequest(userId: String, friendId: String) async throws {
+        // Check if friendship already exists (pending or accepted)
+        let checkEndpoint = "\(supabaseURL)/rest/v1/friendships?user_id=eq.\(userId)&friend_id=eq.\(friendId)"
+        let existing: [Friendship] = try await fetch(endpoint: checkEndpoint)
+        guard existing.isEmpty else {
+            throw NSError(domain: "Friendship", code: -1, userInfo: [NSLocalizedDescriptionKey: "Friendship request already exists"])
+        }
+
         let endpoint = "\(supabaseURL)/rest/v1/friendships"
 
         struct FriendshipInsert: Encodable {
@@ -988,38 +995,46 @@ class SupabaseService: NSObject, ObservableObject {
         }
 
         // Create reverse friendship (accepted, not pending)
-        let reverseEndpoint = "\(supabaseURL)/rest/v1/friendships"
-        struct FriendshipInsert: Encodable {
-            let user_id: String
-            let friend_id: String
-            let status: String
-            let created_at: String
-        }
-        
-        let reverseBody = FriendshipInsert(
-            user_id: friendId,
-            friend_id: userId,
-            status: "accepted",
-            created_at: ISO8601DateFormatter().string(from: Date())
-        )
-        
-        var reverseRequest = URLRequest(url: URL(string: reverseEndpoint)!)
-        reverseRequest.httpMethod = "POST"
-        reverseRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        reverseRequest.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
-        if !authToken.isEmpty {
-            reverseRequest.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
-        }
-        reverseRequest.httpBody = try JSONEncoder().encode(reverseBody)
-        
-        let (reverseData, reverseResponse) = try await URLSession.shared.data(for: reverseRequest)
-        let reverseStatusCode = (reverseResponse as? HTTPURLResponse)?.statusCode ?? 0
-        print("👥 Reverse friendship created with status: \(reverseStatusCode)")
-        if let responseStr = String(data: reverseData, encoding: .utf8), !responseStr.isEmpty {
-            print("👥 Reverse POST response: \(responseStr)")
-        }
-        guard reverseStatusCode == 201 || reverseStatusCode == 200 else {
-            throw NSError(domain: "API", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create reverse friendship"])
+        // Check if reverse friendship already exists
+        let reverseCheckEndpoint = "\(supabaseURL)/rest/v1/friendships?user_id=eq.\(friendId)&friend_id=eq.\(userId)"
+        let existingReverse: [Friendship] = try await fetch(endpoint: reverseCheckEndpoint)
+
+        if existingReverse.isEmpty {
+            let reverseEndpoint = "\(supabaseURL)/rest/v1/friendships"
+            struct FriendshipInsert: Encodable {
+                let user_id: String
+                let friend_id: String
+                let status: String
+                let created_at: String
+            }
+
+            let reverseBody = FriendshipInsert(
+                user_id: friendId,
+                friend_id: userId,
+                status: "accepted",
+                created_at: ISO8601DateFormatter().string(from: Date())
+            )
+
+            var reverseRequest = URLRequest(url: URL(string: reverseEndpoint)!)
+            reverseRequest.httpMethod = "POST"
+            reverseRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            reverseRequest.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+            if !authToken.isEmpty {
+                reverseRequest.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+            }
+            reverseRequest.httpBody = try JSONEncoder().encode(reverseBody)
+
+            let (reverseData, reverseResponse) = try await URLSession.shared.data(for: reverseRequest)
+            let reverseStatusCode = (reverseResponse as? HTTPURLResponse)?.statusCode ?? 0
+            print("👥 Reverse friendship created with status: \(reverseStatusCode)")
+            if let responseStr = String(data: reverseData, encoding: .utf8), !responseStr.isEmpty {
+                print("👥 Reverse POST response: \(responseStr)")
+            }
+            guard reverseStatusCode == 201 || reverseStatusCode == 200 else {
+                throw NSError(domain: "API", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create reverse friendship"])
+            }
+        } else {
+            print("👥 Reverse friendship already exists")
         }
     }
 

@@ -112,16 +112,19 @@ final class UsersEngine: ObservableObject {
         defer { isLoading = false }
 
         var allFriends = (try? await supabase.fetchFriends(userId: userId)) ?? []
+        print("👥 fetchFriends returned \(allFriends.count) total friend entries")
         // Deduplicate friends by ID (keep first occurrence)
         var seenIds = Set<String>()
         friends = allFriends.filter { f in
             if seenIds.contains(f.id) {
+                print("  → Filtering duplicate: \(f.id) (\(f.name))")
                 return false
             }
             seenIds.insert(f.id)
+            print("  → Keeping: \(f.id) (\(f.name))")
             return true
         }
-        print("👥 Loaded \(friends.count) friends for user \(userId)")
+        print("👥 After dedup: \(friends.count) unique friends for user \(userId)")
         
         let requests = (try? await supabase.fetchFriendRequests(userId: userId)) ?? []
         var requestsWithProfiles: [(Friendship, UserProfile?)] = []
@@ -371,6 +374,7 @@ struct UsersFeed: View {
                 BingeRule()
             }
         }
+        .refreshable { await engine.load() }
     }
 
     private func ghostRow(lines: Int) -> some View {
@@ -466,6 +470,7 @@ struct UsersFeed: View {
                 }
             }
         }
+        .refreshable { await engine.load() }
     }
 
     // MARK: - Watching right now
