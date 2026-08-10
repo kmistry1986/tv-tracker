@@ -186,7 +186,60 @@ class SupabaseService: NSObject, ObservableObject {
 
         return user
     }
-    
+
+    func signInWithApple(idToken: String, nonce: String, fullName: String?) async throws -> User {
+        let endpoint = "\(supabaseURL)/auth/v1/token?grant_type=id_token"
+
+        var request = URLRequest(url: URL(string: endpoint)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+
+        struct AppleSignInBody: Encodable {
+            let provider = "apple"
+            let id_token: String
+            let nonce: String
+        }
+
+        let body = AppleSignInBody(id_token: idToken, nonce: nonce)
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Apple sign-in failed"])
+        }
+
+        struct TokenResponse: Decodable {
+            struct UserResponse: Decodable {
+                let id: String
+                let email: String?
+            }
+            let user: UserResponse?
+            let access_token: String?
+            let refresh_token: String?
+        }
+
+        let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: data)
+        let userId = tokenResponse.user?.id ?? UUID().uuidString
+        let userEmail = tokenResponse.user?.email ?? "unknown@apple.local"
+        let token = tokenResponse.access_token ?? ""
+        let refToken = tokenResponse.refresh_token ?? ""
+        print("Apple SignIn userId: \(userId), email: \(userEmail)")
+
+        let user = User(id: userId, email: userEmail, name: fullName ?? "", avatarUrl: nil)
+
+        self.authToken = token
+        try await insertUser(user: user)
+
+        DispatchQueue.main.async {
+            self.currentUser = user
+            self.isLoggedIn = true
+            self.saveSession(user: user, token: token, refreshToken: refToken)
+        }
+
+        return user
+    }
+
     func signOut() {
         DispatchQueue.main.async {
             self.currentUser = nil
