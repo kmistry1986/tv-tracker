@@ -45,33 +45,86 @@ final class BingeFriendsEngine: ObservableObject {
     @Published var friends: [User] = []
     @Published var entries: [BingeFeedEntry] = []
     @Published var suggestions: [UserProfile] = []
+    @Published var incomingRequests: [(friendship: Friendship, profile: UserProfile?)] = []
     @Published var searchText = ""
     @Published var isLoading = false
+    @Published var addingFriendId: String? = nil
+    @Published var acceptingFriendId: Int? = nil
+    @Published var error: String? = nil
+    @Published var successMessage: String? = nil
 
     private let supabase = SupabaseService.shared
 
     /// Shows two or more friends are on — the highlighted row in the design.
     @Published var sharedShow: (show: TVShow, who: [User])?
 
-    /// friend id → the title they most recently logged, for the people strip.
-    @Published var nowWatching: [String: String] = [:]
+    /// friend id → the show they're currently watching, for the people strip.
+    @Published var nowWatching: [String: TVShow] = [:]
 
     func load() async {
         guard let userId = supabase.currentUser?.id else { return }
         isLoading = true
         defer { isLoading = false }
 
-        friends = (try? await supabase.fetchFriends(userId: userId)) ?? []
+        var allFriends = (try? await supabase.fetchFriends(userId: userId)) ?? []
+        // Deduplicate friends by ID (keep first occurrence)
+        var seenIds = Set<String>()
+        friends = allFriends.filter { f in
+            if seenIds.contains(f.id) {
+                return false
+            }
+            seenIds.insert(f.id)
+            return true
+        }
+        print("👥 Loaded \(friends.count) friends for user \(userId)")
+        
+        let requests = (try? await supabase.fetchFriendRequests(userId: userId)) ?? []
+        var requestsWithProfiles: [(Friendship, UserProfile?)] = []
+        for req in requests {
+            let profile = try? await supabase.getUserProfile(userId: req.userId)
+            requestsWithProfiles.append((req, profile))
+        }
+        incomingRequests = requestsWithProfiles
 
         var built: [BingeFeedEntry] = []
         var byShow: [Int: (TVShow, [User])] = [:]
+        var seenShowPerFriend = Set<String>()  // Track "friendId:showId" to deduplicate globally
 
         for friend in friends {
-            let rated = (try? await supabase.getFriendRatings(friendId: friend.id)) ?? []
-            for row in rated.prefix(10) {
+            // Show completed shows in feed (rated or all episodes watched)
+            let userShows = (try? await supabase.getFriendRatings(friendId: friend.id)) ?? []
+
+            // Get episode counts for this friend
+            let episodes = (try? await supabase.fetchUserEpisodes(userId: friend.id)) ?? []
+            var watchedCounts: [Int: Int] = [:]
+            for ep in episodes where ep.watched {
+                watchedCounts[ep.showId, default: 0] += 1
+            }
+
+            var finished: [UserShow] = []
+            for row in userShows {
+                if row.rating != nil {
+                    finished.append(row)
+                } else {
+                    // Check if all episodes are watched
+                    guard let show = try? await supabase.fetchShowById(id: row.showId) else { continue }
+                    let watchedCount = watchedCounts[row.showId] ?? 0
+                    if show.numberOfEpisodes > 0 && watchedCount >= show.numberOfEpisodes {
+                        finished.append(row)
+                    }
+                }
+            }
+
+            let sorted = finished.sorted { $0.watchedDate > $1.watchedDate }
+
+            for row in sorted.prefix(10) {
+                let key = "\(friend.id):\(row.showId)"
+                guard !seenShowPerFriend.contains(key) else { continue }
+                seenShowPerFriend.insert(key)
+
                 guard let show = try? await supabase.fetchShowById(id: row.showId) else { continue }
                 built.append(BingeFeedEntry(friend: friend, show: show,
-                                            rating: row.rating, review: row.review,
+                                            rating: nil, review: nil,
                                             watchedDate: row.watchedDate))
                 var entry = byShow[row.showId] ?? (show, [])
                 entry.1.append(friend)
@@ -81,9 +134,14 @@ final class BingeFriendsEngine: ObservableObject {
 
         entries = built.sorted { $0.watchedDate > $1.watchedDate }
 
-        var latest: [String: String] = [:]
-        for entry in entries where latest[entry.friend.id] == nil {
-            latest[entry.friend.id] = entry.show.title
+        // Build "Watching right now" from currently-watching shows, not from completed feed
+        var latest: [String: TVShow] = [:]
+        let currentUserId = supabase.currentUser?.id ?? ""
+        for friend in friends where friend.id != currentUserId {
+            let currentlyWatching = (try? await supabase.getFriendCurrentlyWatching(friendId: friend.id)) ?? []
+            if let show = currentlyWatching.first {
+                latest[friend.id] = show
+            }
         }
         nowWatching = latest
         sharedShow = byShow.values.first(where: { $0.1.count >= 2 }).map { ($0.0, $0.1) }
@@ -91,20 +149,79 @@ final class BingeFriendsEngine: ObservableObject {
 
     func search() async {
         guard searchText.count >= 2 else { suggestions = []; return }
-        suggestions = (try? await supabase.searchUsers(query: searchText)) ?? []
+        let results = (try? await supabase.searchUsers(query: searchText)) ?? []
+        // Filter out people already in your friends list
+        let friendIds = Set(friends.map { $0.id })
+        suggestions = results.filter { !friendIds.contains($0.userId) }
     }
 
     func add(_ profile: UserProfile) async {
         guard let userId = supabase.currentUser?.id else { return }
-        try? await supabase.sendFriendRequest(userId: userId, friendId: profile.userId)
-        suggestions.removeAll { $0.id == profile.id }
+        addingFriendId = profile.userId
+        error = nil
+        
+        do {
+            try await supabase.sendFriendRequest(userId: userId, friendId: profile.userId)
+            suggestions.removeAll { $0.id == profile.id }
+            successMessage = "Friend request sent to \(profile.displayName)"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                self.successMessage = nil
+            }
+        } catch {
+            self.error = "Failed to send friend request. Please try again."
+            print("Friend request error: \(error.localizedDescription)")
+        }
+        
+        addingFriendId = nil
+    }
+    
+    func accept(_ friendship: Friendship) async {
+        guard let userId = supabase.currentUser?.id else { return }
+        acceptingFriendId = friendship.id
+        error = nil
+        
+        do {
+            print("👥 Accepting friend request: \(friendship.id) from \(friendship.userId)")
+            try await supabase.acceptFriendRequest(requestId: friendship.id, userId: userId, friendId: friendship.userId)
+            print("👥 Friend request accepted successfully!")
+            incomingRequests.removeAll { $0.friendship.id == friendship.id }
+            await load()
+            successMessage = "Friend request accepted"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                self.successMessage = nil
+            }
+        } catch {
+            self.error = "Failed to accept request. Please try again."
+            print("❌ Accept request error: \(error.localizedDescription)")
+        }
+        
+        acceptingFriendId = nil
+    }
+    
+    func reject(_ friendship: Friendship) async {
+        acceptingFriendId = friendship.id
+        error = nil
+        
+        do {
+            try await supabase.rejectFriendRequest(requestId: friendship.id)
+            incomingRequests.removeAll { $0.friendship.id == friendship.id }
+            successMessage = "Friend request declined"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                self.successMessage = nil
+            }
+        } catch {
+            self.error = "Failed to decline request. Please try again."
+            print("Reject request error: \(error.localizedDescription)")
+        }
+        
+        acceptingFriendId = nil
     }
 }
 
 // MARK: - Feed
 
 struct BingeFriendsFeed: View {
-    @StateObject private var engine = BingeFriendsEngine()
+    @ObservedObject var engine: BingeFriendsEngine
     @Binding var tab: BingeTab
     var onFindPeople: () -> Void = {}
 
@@ -118,7 +235,6 @@ struct BingeFriendsFeed: View {
                 feed
             }
         }
-        .task { await engine.load() }
     }
 
     private var loading: some View {
@@ -229,23 +345,60 @@ struct BingeFriendsFeed: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Watching right now").bingeLabel(11).foregroundStyle(BingeTheme.inkMuted)
                         ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 10) {
+                            HStack(spacing: 12) {
                                 ForEach(Array(engine.friends.enumerated()), id: \.element.id) { index, f in
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        Text(initials(f.name))
-                                            .bingeHeadline(12)
-                                            .frame(width: 50, height: 50)
-                                            .background(tileFill(index))
-                                            .foregroundStyle(tileInk(index))
-                                        Text(engine.nowWatching[f.id]
-                                             ?? (f.name.split(separator: " ").first.map(String.init) ?? f.name))
-                                            .bingeBody(10)
-                                            .foregroundStyle(BingeTheme.inkMuted)
-                                            .frame(width: 50, alignment: .leading)
-                                            .lineLimit(1)
+                                    VStack(alignment: .center, spacing: 6) {
+                                        ZStack(alignment: .topLeading) {
+                                            // Poster thumbnail
+                                            if let posterUrl = engine.nowWatching[f.id]?.posterUrl,
+                                               let url = URL(string: posterUrl) {
+                                                AsyncImage(url: url) { phase in
+                                                    switch phase {
+                                                    case .success(let image):
+                                                        image
+                                                            .resizable()
+                                                            .aspectRatio(contentMode: .fill)
+                                                            .frame(width: 60, height: 90)
+                                                            .clipped()
+                                                    default:
+                                                        Rectangle()
+                                                            .fill(BingeTheme.hairline)
+                                                            .frame(width: 60, height: 90)
+                                                    }
+                                                }
+                                            } else {
+                                                Rectangle()
+                                                    .fill(BingeTheme.hairline)
+                                                    .frame(width: 60, height: 90)
+                                            }
+
+                                            // Friend initials badge
+                                            Text(initials(f.name))
+                                                .bingeHeadline(10)
+                                                .frame(width: 28, height: 28)
+                                                .background(tileFill(index))
+                                                .foregroundStyle(tileInk(index))
+                                                .padding(4)
+                                        }
+
+                                        // Show title
+                                        if let show = engine.nowWatching[f.id] {
+                                            Text(show.title)
+                                                .bingeBody(9)
+                                                .foregroundStyle(BingeTheme.ink)
+                                                .frame(width: 68, alignment: .center)
+                                                .lineLimit(2)
+                                        } else {
+                                            Text(f.name.split(separator: " ").first.map(String.init) ?? f.name)
+                                                .bingeBody(9)
+                                                .foregroundStyle(BingeTheme.inkMuted)
+                                                .frame(width: 68, alignment: .center)
+                                                .lineLimit(2)
+                                        }
                                     }
                                 }
                             }
+                            .padding(.horizontal, 4)
                         }
                     }
                     .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 16)
@@ -315,10 +468,33 @@ struct BingeFriendsFeed: View {
 // MARK: - People
 
 struct BingePeopleTab: View {
-    @StateObject private var engine = BingeFriendsEngine()
+    @ObservedObject var engine: BingeFriendsEngine
 
     var body: some View {
         VStack(spacing: 0) {
+            if let error = engine.error {
+                HStack {
+                    Text(error).bingeBody(13).foregroundStyle(Color.white)
+                    Spacer()
+                    Button { engine.error = nil } label: {
+                        Text("×").bingeHeadline(16).foregroundStyle(Color.white)
+                    }
+                }
+                .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 12)
+                .background(Color.red.opacity(0.8))
+                BingeRule()
+            }
+            
+            if let success = engine.successMessage {
+                HStack {
+                    Text(success).bingeBody(13).foregroundStyle(BingeTheme.ground)
+                    Spacer()
+                }
+                .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 12)
+                .background(BingeTheme.accent)
+                BingeRule()
+            }
+            
             HStack(spacing: 10) {
                 TextField("Search by name", text: $engine.searchText)
                     .bingeBody(14)
@@ -337,11 +513,58 @@ struct BingePeopleTab: View {
 
             ScrollView {
                 LazyVStack(spacing: 0) {
+                    if !engine.incomingRequests.isEmpty {
+                        BingeSectionHeader(title: "Pending requests")
+                        ForEach(engine.incomingRequests, id: \.friendship.id) { item in
+                            BingeRule()
+                            HStack {
+                                HStack(spacing: 12) {
+                                    Text((item.profile?.displayName ?? "Someone").split(separator: " ").prefix(2)
+                                            .map { String($0.prefix(1)).uppercased() }.joined())
+                                        .bingeHeadline(12)
+                                        .frame(width: 36, height: 36)
+                                        .background(BingeTheme.ink).foregroundStyle(BingeTheme.ground)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(item.profile?.displayName ?? "Someone").bingeHeadline(14)
+                                        Text("wants to be friends").bingeBody(12).foregroundStyle(BingeTheme.inkMuted)
+                                    }
+                                }
+                                Spacer()
+                                HStack(spacing: 8) {
+                                    if engine.acceptingFriendId == item.friendship.id {
+                                        ProgressView()
+                                            .tint(BingeTheme.accent)
+                                            .frame(height: 34)
+                                    } else {
+                                        Button { Task { await engine.accept(item.friendship) } } label: {
+                                            Text("Accept").bingeLabel(11)
+                                                .foregroundStyle(Color.white)
+                                                .padding(.horizontal, 12).padding(.vertical, 7)
+                                                .frame(minHeight: 34)
+                                                .background(BingeTheme.accent)
+                                        }
+                                        .buttonStyle(.plain)
+                                        
+                                        Button { Task { await engine.reject(item.friendship) } } label: {
+                                            Text("Decline").bingeLabel(11)
+                                                .foregroundStyle(BingeTheme.ink)
+                                                .padding(.horizontal, 12).padding(.vertical, 7)
+                                                .frame(minHeight: 34)
+                                                .overlay(Rectangle().stroke(BingeTheme.ink, lineWidth: 1))
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 6)
+                        }
+                    }
+                    
                     if !engine.suggestions.isEmpty {
                         BingeSectionHeader(title: "Results")
                         ForEach(engine.suggestions) { p in
                             BingeRule()
-                            personRow(name: p.displayName, detail: p.bio ?? "On Binge") {
+                            personRow(name: p.displayName, detail: p.bio ?? "On Binge", userId: p.userId) {
                                 Task { await engine.add(p) }
                             }
                         }
@@ -351,11 +574,11 @@ struct BingePeopleTab: View {
                         BingeSectionHeader(title: "Your friends")
                         ForEach(engine.friends) { f in
                             BingeRule()
-                            personRow(name: f.name, detail: f.email, action: nil)
+                            personRow(name: f.name, detail: f.email, userId: f.id, action: nil)
                         }
                     }
 
-                    if engine.friends.isEmpty && engine.suggestions.isEmpty {
+                    if engine.friends.isEmpty && engine.suggestions.isEmpty && engine.incomingRequests.isEmpty {
                         BingeArgumentBlock(
                             kicker: "Start here",
                             headline: "FIND THREE\nPEOPLE.",
@@ -364,11 +587,10 @@ struct BingePeopleTab: View {
                 }
             }
         }
-        .task { await engine.load() }
     }
 
     @ViewBuilder
-    private func personRow(name: String, detail: String, action: (() -> Void)?) -> some View {
+    private func personRow(name: String, detail: String, userId: String, action: (() -> Void)? = nil) -> some View {
         HStack {
             HStack(spacing: 12) {
                 Text(name.split(separator: " ").prefix(2)
@@ -383,7 +605,15 @@ struct BingePeopleTab: View {
                 }
             }
             Spacer()
-            if let action { BingeChip(title: "Add", action: action) }
+            if let action {
+                if engine.addingFriendId == userId {
+                    ProgressView()
+                        .tint(BingeTheme.accent)
+                        .frame(height: 34)
+                } else {
+                    BingeChip(title: "Add", action: action)
+                }
+            }
         }
         .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 6)
     }

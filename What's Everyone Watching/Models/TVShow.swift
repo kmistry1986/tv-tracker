@@ -10,6 +10,7 @@ struct TVShow: Identifiable, Codable {
     let numberOfSeasons: Int
     let numberOfEpisodes: Int
     let platforms: [PlatformInfo]?
+    let runtime: Int?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -21,6 +22,7 @@ struct TVShow: Identifiable, Codable {
         case numberOfSeasons = "number_of_seasons"
         case numberOfEpisodes = "number_of_episodes"
         case platforms
+        case runtime
     }
 }
 

@@ -77,7 +77,7 @@ private enum BingeTypeScale {
     /// readable once real copy went in — but the 13pt ones are already right,
     /// so scaling the whole role would overshoot. A floor lifts only the
     /// bottom: 9/10/11 all land here, 12+ is untouched.
-    static let labelFloor: CGFloat = 12
+    static let labelFloor: CGFloat = 13
 }
 
 private struct BingeDisplayMod: ViewModifier {

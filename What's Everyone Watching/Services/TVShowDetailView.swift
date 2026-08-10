@@ -378,7 +378,8 @@ struct TVShowDetailView: View {
                         firstAirDate: show.firstAirDate,
                         numberOfSeasons: show.numberOfSeasons,
                         numberOfEpisodes: show.numberOfEpisodes,
-                        platforms: nil
+                        platforms: nil,
+                        runtime: nil
                     )
                     try await supabase.insertShow(show: tvShow)
                     print("✅ Show inserted to tv_shows table")

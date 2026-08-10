@@ -356,7 +356,8 @@ struct ImportView: View {
                                 firstAirDate: showDetail.firstAirDate,
                                 numberOfSeasons: showDetail.numberOfSeasons,
                                 numberOfEpisodes: showDetail.numberOfEpisodes,
-                                platforms: nil
+                                platforms: nil,
+                                runtime: nil
                             )
                             do {
                                 try await supabase.insertShow(show: tvShow)

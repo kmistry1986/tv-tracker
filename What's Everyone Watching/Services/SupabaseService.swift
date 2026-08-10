@@ -750,7 +750,7 @@ class SupabaseService: NSObject, ObservableObject {
             let show = TVShow(id: showId, tmdbId: showId, title: tmdbShow.name,
                             overview: tmdbShow.overview, posterUrl: tmdbShow.imageUrl,
                             firstAirDate: tmdbShow.firstAirDate, numberOfSeasons: tmdbShow.numberOfSeasons,
-                            numberOfEpisodes: tmdbShow.numberOfEpisodes, platforms: nil)
+                            numberOfEpisodes: tmdbShow.numberOfEpisodes, platforms: nil, runtime: nil)
             try? await insertShow(show: show)
         }
 
@@ -832,7 +832,7 @@ class SupabaseService: NSObject, ObservableObject {
             let show = TVShow(id: showId, tmdbId: showId, title: tmdbShow.name,
                             overview: tmdbShow.overview, posterUrl: tmdbShow.imageUrl,
                             firstAirDate: tmdbShow.firstAirDate, numberOfSeasons: tmdbShow.numberOfSeasons,
-                            numberOfEpisodes: tmdbShow.numberOfEpisodes, platforms: nil)
+                            numberOfEpisodes: tmdbShow.numberOfEpisodes, platforms: nil, runtime: nil)
             try? await insertShow(show: show)
         }
 
@@ -907,13 +907,50 @@ class SupabaseService: NSObject, ObservableObject {
         let body = FriendshipUpdate(status: "accepted")
         request.httpBody = try JSONEncoder().encode(body)
 
-        let (_, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 204 else {
-            throw NSError(domain: "API", code: -1, userInfo: [NSLocalizedDescriptionKey: "Accept failed"])
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+        print("👥 PATCH friendships status: \(statusCode)")
+        if let responseStr = String(data: data, encoding: .utf8), !responseStr.isEmpty {
+            print("👥 PATCH response: \(responseStr)")
+        }
+        guard statusCode == 204 || statusCode == 200 else {
+            throw NSError(domain: "API", code: -1, userInfo: [NSLocalizedDescriptionKey: "Accept failed with status \(statusCode)"])
         }
 
-        // Create reverse friendship
-        try await sendFriendRequest(userId: friendId, friendId: userId)
+        // Create reverse friendship (accepted, not pending)
+        let reverseEndpoint = "\(supabaseURL)/rest/v1/friendships"
+        struct FriendshipInsert: Encodable {
+            let user_id: String
+            let friend_id: String
+            let status: String
+            let created_at: String
+        }
+        
+        let reverseBody = FriendshipInsert(
+            user_id: friendId,
+            friend_id: userId,
+            status: "accepted",
+            created_at: ISO8601DateFormatter().string(from: Date())
+        )
+        
+        var reverseRequest = URLRequest(url: URL(string: reverseEndpoint)!)
+        reverseRequest.httpMethod = "POST"
+        reverseRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        reverseRequest.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        if !authToken.isEmpty {
+            reverseRequest.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
+        reverseRequest.httpBody = try JSONEncoder().encode(reverseBody)
+        
+        let (reverseData, reverseResponse) = try await URLSession.shared.data(for: reverseRequest)
+        let reverseStatusCode = (reverseResponse as? HTTPURLResponse)?.statusCode ?? 0
+        print("👥 Reverse friendship created with status: \(reverseStatusCode)")
+        if let responseStr = String(data: reverseData, encoding: .utf8), !responseStr.isEmpty {
+            print("👥 Reverse POST response: \(responseStr)")
+        }
+        guard reverseStatusCode == 201 || reverseStatusCode == 200 else {
+            throw NSError(domain: "API", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create reverse friendship"])
+        }
     }
 
     func rejectFriendRequest(requestId: Int) async throws {
@@ -929,13 +966,22 @@ class SupabaseService: NSObject, ObservableObject {
     }
 
     func fetchFriends(userId: String) async throws -> [User] {
-        let endpoint = "\(supabaseURL)/rest/v1/friendships?user_id=eq.\(userId)&status=eq.accepted&select=friend_id"
+        let endpoint = "\(supabaseURL)/rest/v1/friendships?user_id=eq.\(userId)&status=eq.accepted"
+        print("👥 fetchFriends query: \(endpoint)")
+        
         let friendships: [Friendship] = try await fetch(endpoint: endpoint)
+        print("👥 fetchFriends for \(userId): found \(friendships.count) accepted friendships")
+        for friendship in friendships {
+            print("  → friend_id: \(friendship.friendId)")
+        }
         var friends: [User] = []
 
         for friendship in friendships {
             if let friend = try? await fetchUser(userId: friendship.friendId) {
                 friends.append(friend)
+                print("  ✓ Loaded user: \(friend.name)")
+            } else {
+                print("  ✗ Failed to load user \(friendship.friendId)")
             }
         }
         return friends
@@ -954,6 +1000,38 @@ class SupabaseService: NSObject, ObservableObject {
     func getFriendRatings(friendId: String) async throws -> [UserShow] {
         let endpoint = "\(supabaseURL)/rest/v1/user_shows?user_id=eq.\(friendId)"
         return try await fetch(endpoint: endpoint)
+    }
+    
+    func getFriendCurrentlyWatching(friendId: String) async throws -> [TVShow] {
+        // Get all episodes for this friend
+        let episodes = try await fetchUserEpisodes(userId: friendId)
+
+        // Group by show_id to count watched episodes per show
+        var episodesByShow: [Int: [Episode]] = [:]
+        for episode in episodes {
+            if episodesByShow[episode.showId] == nil {
+                episodesByShow[episode.showId] = []
+            }
+            episodesByShow[episode.showId]?.append(episode)
+        }
+
+        var shows: [TVShow] = []
+        for (showId, showEpisodes) in episodesByShow {
+            // Count watched episodes
+            let watchedEpisodes = showEpisodes.filter { $0.watched }.count
+            let totalEpisodes = showEpisodes.count
+
+            // Apply same "You Started" logic:
+            // - watchedEpisodes > 0 (has watched at least one)
+            // - watchedEpisodes < totalEpisodes (not all finished)
+            if watchedEpisodes > 0 && watchedEpisodes < totalEpisodes {
+                if let show = try? await fetchShowById(id: showId) {
+                    shows.append(show)
+                }
+            }
+        }
+
+        return shows
     }
 
     func getUserProfile(userId: String) async throws -> UserProfile {
@@ -1422,7 +1500,7 @@ extension SupabaseService {
                                     title: tmdbShow.name, overview: tmdbShow.overview,
                                     posterUrl: tmdbShow.imageUrl, firstAirDate: tmdbShow.firstAirDate,
                                     numberOfSeasons: tmdbShow.numberOfSeasons,
-                                    numberOfEpisodes: tmdbShow.numberOfEpisodes, platforms: nil)
+                                    numberOfEpisodes: tmdbShow.numberOfEpisodes, platforms: nil, runtime: nil)
                     try await insertShow(show: show)
                     print("✅ Inserted show \(watchlistShow.showId): \(tmdbShow.name)")
                     showsReconciled += 1

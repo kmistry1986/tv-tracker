@@ -32,6 +32,7 @@ struct BingeShowDetailView: View {
     @State private var isLoading = true
     @State private var isWorking = false
     @State private var showAbout = false
+    @State private var expandedEpisodes: Set<Int> = []
     @State private var showSeasonSheet = false
     @State private var showRatingSheet = false
     @State private var hasLoaded = false
@@ -328,45 +329,64 @@ struct BingeShowDetailView: View {
 
     private func episodeRow(_ ep: EpisodeDetail) -> some View {
         let on = watchedTmdbIds.contains(ep.id)
-        return Button { Task { await toggle(ep) } } label: {
-            HStack(alignment: .top, spacing: 14) {
-                ZStack {
-                    Rectangle()
-                        .fill(on ? BingeTheme.ink : Color.clear)
-                        .overlay(Rectangle().stroke(on ? BingeTheme.ink : BingeTheme.hairline, lineWidth: 2))
-                        .frame(width: 22, height: 22)
-                    if on {
-                        Text("✓").bingeLabel(11).foregroundStyle(BingeTheme.ground)
+        let isExpanded = expandedEpisodes.contains(ep.id)
+        return VStack(spacing: 0) {
+            Button { Task { await toggle(ep) } } label: {
+                HStack(alignment: .top, spacing: 14) {
+                    ZStack {
+                        Rectangle()
+                            .fill(on ? BingeTheme.ink : Color.clear)
+                            .overlay(Rectangle().stroke(on ? BingeTheme.ink : BingeTheme.hairline, lineWidth: 2))
+                            .frame(width: 22, height: 22)
+                        if on {
+                            Text("✓").bingeLabel(11).foregroundStyle(BingeTheme.ground)
+                        }
                     }
-                }
-                .padding(.top, 2)
+                    .padding(.top, 2)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Text("E\(ep.episodeNumber)").bingeLabel(10)
-                            .foregroundStyle(BingeTheme.inkMuted)
-                        Text(ep.name).bingeHeadline(15).lineLimit(1)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            Text("E\(ep.episodeNumber)").bingeLabel(10)
+                                .foregroundStyle(BingeTheme.inkMuted)
+                            Text(ep.name).bingeHeadline(15).lineLimit(1)
+                        }
+                        if let overview = ep.overview, !overview.isEmpty {
+                            Text(overview).bingeBody(12)
+                                .foregroundStyle(BingeTheme.inkMuted)
+                                .lineLimit(isExpanded ? nil : 2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        if let air = ep.airDate, !air.isEmpty {
+                            Text(air).bingeLabel(10).foregroundStyle(BingeTheme.inkFaint)
+                        }
                     }
-                    if let overview = ep.overview, !overview.isEmpty {
-                        Text(overview).bingeBody(12)
-                            .foregroundStyle(BingeTheme.inkMuted)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    if let air = ep.airDate, !air.isEmpty {
-                        Text(air).bingeLabel(10).foregroundStyle(BingeTheme.inkFaint)
-                    }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
+                .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 14)
+                .frame(minHeight: BingeTheme.minTap)
+                .background(on ? BingeTheme.surface : BingeTheme.ground)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 14)
-            .frame(minHeight: BingeTheme.minTap)
-            .background(on ? BingeTheme.surface : BingeTheme.ground)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityLabel("Episode \(ep.episodeNumber), \(ep.name)")
+            .accessibilityValue(on ? "Watched" : "Not watched")
+
+            if let overview = ep.overview, !overview.isEmpty {
+                Button {
+                    if expandedEpisodes.contains(ep.id) {
+                        expandedEpisodes.remove(ep.id)
+                    } else {
+                        expandedEpisodes.insert(ep.id)
+                    }
+                } label: {
+                    Text(isExpanded ? "Less" : "More").bingeLabel(10)
+                        .foregroundStyle(BingeTheme.accent)
+                        .padding(.vertical, 4).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 8)
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Episode \(ep.episodeNumber), \(ep.name)")
-        .accessibilityValue(on ? "Watched" : "Not watched")
     }
 
     // MARK: Data
@@ -381,7 +401,7 @@ struct BingeShowDetailView: View {
             let show = TVShow(id: tmdbId, tmdbId: tmdbId, title: d.name,
                             overview: d.overview, posterUrl: d.imageUrl,
                             firstAirDate: d.firstAirDate, numberOfSeasons: d.numberOfSeasons,
-                            numberOfEpisodes: d.numberOfEpisodes, platforms: nil)
+                            numberOfEpisodes: d.numberOfEpisodes, platforms: nil, runtime: nil)
             try? await supabase.insertShow(show: show)
 
             let list = d.numberOfSeasons > 0 ? Array(1...d.numberOfSeasons) : []
@@ -554,7 +574,7 @@ struct BingeShowDetailView: View {
                 let show = TVShow(id: dbShowId ?? tmdbId, tmdbId: tmdbId, title: details.name,
                                 overview: details.overview, posterUrl: details.imageUrl,
                                 firstAirDate: details.firstAirDate, numberOfSeasons: details.numberOfSeasons,
-                                numberOfEpisodes: details.numberOfEpisodes, platforms: nil)
+                                numberOfEpisodes: details.numberOfEpisodes, platforms: nil, runtime: nil)
                 let item = BingeLibraryItem(id: dbShowId ?? tmdbId, show: show, rating: rating,
                                           watchedDate: ISO8601DateFormatter().string(from: Date()),
                                           isWatchlist: false, watchedEpisodes: watchedCount,

@@ -382,7 +382,7 @@ final class BingeSearchEngine: ObservableObject {
                             let show = TVShow(id: result.tmdbId, tmdbId: result.tmdbId, title: tmdbShow.name,
                                             overview: tmdbShow.overview, posterUrl: tmdbShow.imageUrl,
                                             firstAirDate: tmdbShow.firstAirDate, numberOfSeasons: tmdbShow.numberOfSeasons,
-                                            numberOfEpisodes: tmdbShow.numberOfEpisodes, platforms: nil)
+                                            numberOfEpisodes: tmdbShow.numberOfEpisodes, platforms: nil, runtime: nil)
                             try? await supabase.insertShow(show: show)
                         }
 

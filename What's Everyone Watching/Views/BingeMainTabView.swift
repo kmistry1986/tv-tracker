@@ -107,23 +107,41 @@ struct BingeMainTabView: View {
 struct BingeFriendsTab: View {
     @Binding var tab: BingeTab
     @State private var showPeople = false
+    @StateObject private var engine = BingeFriendsEngine()
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .lastTextBaseline) {
                 Text("Friends").bingeDisplay(34).textCase(.uppercase)
                 Spacer(minLength: 12)
-                Button { showPeople = true } label: {
-                    Text("Invite").bingeLabel(11)
-                        .foregroundStyle(BingeTheme.accent)
+                if engine.incomingRequests.count > 0 {
+                    Button { showPeople = true } label: {
+                        VStack(spacing: 2) {
+                            Text("Invite").bingeLabel(11)
+                                .foregroundStyle(BingeTheme.accent)
+                            Text("\(engine.incomingRequests.count)")
+                                .bingeLabel(9)
+                                .foregroundStyle(Color.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.red)
+                        }
                         .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button { showPeople = true } label: {
+                        Text("Invite").bingeLabel(11)
+                            .foregroundStyle(BingeTheme.accent)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
             .padding(.horizontal, BingeTheme.gutter).padding(.top, 8).padding(.bottom, 12)
             BingeRule(strong: true)
 
-            BingeFriendsFeed(tab: $tab, onFindPeople: { showPeople = true })
+            BingeFriendsFeed(engine: engine, tab: $tab, onFindPeople: { showPeople = true })
         }
         .sheet(isPresented: $showPeople) {
             NavigationStack {
@@ -138,7 +156,7 @@ struct BingeFriendsTab: View {
                     }
                     .padding(.horizontal, BingeTheme.gutter).padding(.top, 18).padding(.bottom, 12)
                     BingeRule(strong: true)
-                    BingePeopleTab()
+                    BingePeopleTab(engine: engine)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .background(BingeTheme.ground)
@@ -151,6 +169,7 @@ struct BingeFriendsTab: View {
         .toolbar(.hidden, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .bottom, spacing: 0) { BingeTabBar(selection: $tab) }
+        .task { await engine.load() }
     }
 }
 

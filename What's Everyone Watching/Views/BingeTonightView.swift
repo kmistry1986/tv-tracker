@@ -139,14 +139,18 @@ final class TonightEngine: ObservableObject {
         defer { isLoading = false }
 
         do {
-            friends = try await supabase.fetchFriends(userId: userId)
+            print("🌙 Tonight: Starting load for user \(userId)")
+            
+            // Load friends (with graceful failure for empty users)
+            friends = (try? await supabase.fetchFriends(userId: userId)) ?? []
+            print("🌙 Tonight: Loaded \(friends.count) friends")
 
             // Load watchlist
-            let watchlistItems = try await supabase.fetchWatchlistShows(userId: userId)
+            let watchlistItems = (try? await supabase.fetchWatchlistShows(userId: userId)) ?? []
             watchlist = watchlistItems.map(\.showId)
 
             // What the user has already watched — never recommend these.
-            let mine = try await supabase.fetchUserShows(userId: userId)
+            let mine = (try? await supabase.fetchUserShows(userId: userId)) ?? []
             let seen = Set(mine.map(\.showId))
 
             // Tally friends' well-rated shows.
@@ -217,8 +221,7 @@ final class TonightEngine: ObservableObject {
 
     /// Needs `fetchShowById` on SupabaseService — see the note at the top.
     private func resolveShow(id: Int) async throws -> TVShow? {
-        // return try await supabase.fetchShowById(id: id)
-        return nil
+        return try await supabase.fetchShowById(id: id)
     }
 
     private func service(for show: TVShow) async throws -> String? {
@@ -230,6 +233,7 @@ final class TonightEngine: ObservableObject {
     /// No social signal. Recommend from the user's OWN highest-rated show —
     /// a real signal — and fall back to trending only if they've rated nothing.
     private func loadFromOwnTaste(mine: [UserShow], excluding seen: Set<Int>) async throws {
+        print("🌙 Tonight: loadFromOwnTaste starting with \(mine.count) shows")
         let best = mine
             .filter { ($0.rating ?? 0) >= 4 }
             .sorted { ($0.rating ?? 0) > ($1.rating ?? 0) }
@@ -251,8 +255,11 @@ final class TonightEngine: ObservableObject {
                                      isFallback: true, seedTitle: seed.title))
         }
 
+        print("🌙 Tonight: Fetching trending...")
         let trending = try await TMDBService.shared.getTrendingTV()
+        print("🌙 Tonight: Got \(trending.count) trending TV shows")
         let trendingMovies = try await TMDBService.shared.getTrendingMovies()
+        print("🌙 Tonight: Got \(trendingMovies.count) trending movies")
 
         var tvIndex = 0, movieIndex = 0
         while picks.count < 15 {
@@ -277,20 +284,17 @@ final class TonightEngine: ObservableObject {
                 movieIndex += 1
                 guard let id = result.id, !seen.contains(id) && !picks.contains(where: { $0.show.id == id }) else { continue }
 
-                // Skip movies that are too recent (likely in theatres)
-                var skipMovie = false
-                if let movie = try? await TMDBService.shared.getMovie(id: id),
-                   let releaseDate = movie.releaseDate {
-                    if let date = ISO8601DateFormatter().date(from: releaseDate) {
-                        let daysOld = Calendar.current.dateComponents([.day], from: date, to: Date()).day ?? 0
-                        if daysOld < 90 { // Skip movies released in the last 90 days
-                            skipMovie = true
-                        }
-                    }
-                }
-                guard !skipMovie else { continue }
+                // Fetch movie details to get runtime and validate release date
+                guard let movie = try? await TMDBService.shared.getMovie(id: id) else { continue }
+                guard let releaseDate = movie.releaseDate else { continue }
 
-                let show = makeShow(from: result)
+                // Skip movies that are too recent (likely in theatres)
+                if let date = ISO8601DateFormatter().date(from: releaseDate) {
+                    let daysOld = Calendar.current.dateComponents([.day], from: date, to: Date()).day ?? 0
+                    if daysOld < 90 { continue }
+                }
+
+                let show = makeShow(from: result, runtime: movie.runtime)
                 var pick = TonightPick(show: show, friendsFinished: [],
                                        averageFriendRating: nil,
                                        service: try? await service(for: show),
@@ -301,7 +305,7 @@ final class TonightEngine: ObservableObject {
         }
     }
 
-    private func makeShow(from r: SearchResult) -> TVShow {
+    private func makeShow(from r: SearchResult, runtime: Int? = nil) -> TVShow {
         TVShow(id: r.id ?? 0,
                tmdbId: r.id ?? 0,
                title: r.displayTitle.isEmpty ? "Untitled" : r.displayTitle,
@@ -310,7 +314,8 @@ final class TonightEngine: ObservableObject {
                firstAirDate: nil,
                numberOfSeasons: 0,
                numberOfEpisodes: 0,
-               platforms: nil)
+               platforms: nil,
+               runtime: runtime)
     }
 }
 
@@ -580,9 +585,38 @@ struct BingeTonightView: View {
     }
 
     private func metaLine(_ pick: TonightPick) -> String {
-        var parts: [String] = [pick.isMovie ? "Movie" : "Series"]
-        if let s = pick.service, !s.isEmpty { parts.append(s) }
-        return parts.joined(separator: " | ")
+        var parts: [String] = []
+
+        if let airDate = pick.show.firstAirDate, airDate.count >= 4 {
+            let year = String(airDate.prefix(4))
+            parts.append(year)
+        }
+
+        parts.append(pick.isMovie ? "Movie" : "Series")
+
+        if pick.isMovie {
+            if let runtime = pick.show.runtime, runtime > 0 {
+                let hours = runtime / 60
+                let minutes = runtime % 60
+                if hours > 0 && minutes > 0 {
+                    parts.append("\(hours)h \(minutes)m")
+                } else if hours > 0 {
+                    parts.append("\(hours)h")
+                } else {
+                    parts.append("\(minutes)m")
+                }
+            }
+        } else {
+            if pick.show.numberOfEpisodes > 0 {
+                parts.append("\(pick.show.numberOfEpisodes) episode\(pick.show.numberOfEpisodes == 1 ? "" : "s")")
+            }
+        }
+
+        if let s = pick.service, !s.isEmpty {
+            parts.append(s)
+        }
+
+        return parts.joined(separator: " · ")
     }
 
     private var weekday: String {
