@@ -66,6 +66,46 @@ final class UsersEngine: ObservableObject {
     /// card that stood for a person could only ever name one of them.
     @Published var nowWatchingAll: [String: [TVShow]] = [:]
 
+    /// TMDB ids already on your watchlist. Held here so a card can show its own
+    /// state — a save control that doesn't know it's already saved is worse than
+    /// none, since the only way to check would be to leave the page.
+    @Published var savedShowIds: Set<Int> = []
+    @Published var savingShowId: Int? = nil
+    /// show id → watchlist ROW id. Removal is keyed on the row, not the show.
+    private var savedRowIds: [Int: Int] = [:]
+
+    /// `show_id` in this codebase IS the TMDB id — addToWatchlistShow passes it
+    /// straight to TMDBService.getTVShow(id:), so nothing here translates.
+    func toggleSave(_ show: TVShow) async {
+        guard let userId = supabase.currentUser?.id else { return }
+        let id = show.tmdbId
+        savingShowId = id
+        do {
+            if savedShowIds.contains(id) {
+                if let rowId = savedRowIds[id] {
+                    try await supabase.removeFromWatchlistShow(id: rowId)
+                }
+                savedShowIds.remove(id)
+                savedRowIds[id] = nil
+            } else {
+                try await supabase.addToWatchlistShow(userId: userId, showId: id, priority: "high")
+                savedShowIds.insert(id)
+                // Re-read so we hold the new row's id and a second tap can undo it.
+                if let rows = try? await supabase.fetchWatchlistShows(userId: userId) {
+                    savedRowIds = Dictionary(rows.map { ($0.showId, $0.id) },
+                                             uniquingKeysWith: { first, _ in first })
+                }
+                successMessage = "Saved \(show.title)"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    self.successMessage = nil
+                }
+            }
+        } catch {
+            self.error = "Couldn't update your list. Try again."
+        }
+        savingShowId = nil
+    }
+
     func load() async {
         guard let userId = supabase.currentUser?.id else { return }
         isLoading = true
@@ -155,6 +195,12 @@ final class UsersEngine: ObservableObject {
         }
         nowWatching = latest
         nowWatchingAll = all
+        if let userId = supabase.currentUser?.id,
+           let saved = try? await supabase.fetchWatchlistShows(userId: userId) {
+            savedShowIds = Set(saved.map(\.showId))
+            savedRowIds = Dictionary(saved.map { ($0.showId, $0.id) },
+                                     uniquingKeysWith: { first, _ in first })
+        }
         sharedShow = byShow.values.first(where: { $0.1.count >= 2 }).map { ($0.0, $0.1) }
     }
 
@@ -358,7 +404,14 @@ struct UsersFeed: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(alignment: .top, spacing: 12) {
                                 ForEach(Array(nowCards.enumerated()), id: \.offset) { _, item in
-                                    nowCard(item.friend, show: item.show)
+                                    NavigationLink {
+                                        BingeShowDetailView(tmdbId: item.show.tmdbId,
+                                                            dbShowId: item.show.id,
+                                                            title: item.show.title)
+                                    } label: {
+                                        nowCard(item.friend, show: item.show)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                             }
                             .padding(.horizontal, BingeTheme.gutter)
@@ -370,14 +423,21 @@ struct UsersFeed: View {
                 }
 
                 if let shared = engine.sharedShow {
-                    BingeFeedRow(posterURL: shared.show.posterUrl,
-                                 meta: "\(shared.who.count) friends · watching",
-                                 headline: "Everyone's on \(shared.show.title)",
-                                 quote: "Catch up and you're in the conversation.",
-                                 highlighted: true,
-                                 metaAccent: true) {
-                        BingeChip(title: "Join them", filled: true)
+                    NavigationLink {
+                        BingeShowDetailView(tmdbId: shared.show.tmdbId,
+                                            dbShowId: shared.show.id,
+                                            title: shared.show.title)
+                    } label: {
+                        BingeFeedRow(posterURL: shared.show.posterUrl,
+                                     meta: "\(shared.who.count) friends · watching",
+                                     headline: "Everyone's on \(shared.show.title)",
+                                     quote: "Catch up and you're in the conversation.",
+                                     highlighted: true,
+                                     metaAccent: true) {
+                            saveChip(shared.show, filled: true)
+                        }
                     }
+                    .buttonStyle(.plain)
                     BingeRule()
                 }
 
@@ -391,7 +451,7 @@ struct UsersFeed: View {
                                      meta: entry.meta,
                                      headline: entry.headline,
                                      quote: entry.review) {
-                            BingeChip(title: "Save it")
+                            saveChip(entry.show)
                         }
                     }
                     .buttonStyle(.plain)
@@ -424,7 +484,8 @@ struct UsersFeed: View {
     /// the small print. 104pt gives a title two full lines, which the old 50pt
     /// column never could: "Silo" fitted and nothing else did.
     private func nowCard(_ f: User, show: TVShow) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let saved = engine.savedShowIds.contains(show.tmdbId)
+        return VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .bottomLeading) {
                 poster(show)
                 Text(initials(f.name))
@@ -435,24 +496,57 @@ struct UsersFeed: View {
             }
             .frame(width: 104, height: 148)
             .clipped()
+            .overlay(alignment: .topTrailing) {
+                // Save without leaving the strip. Ink on the artwork so it reads
+                // as a control on the poster, accent once saved — the one place
+                // colour means "this is yours now".
+                Button { Task { await engine.toggleSave(show) } } label: {
+                    Image(systemName: saved ? "checkmark" : "plus")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(BingeTheme.ground)
+                        .frame(width: 30, height: 30)
+                        .background(saved ? BingeTheme.accent : BingeTheme.ink)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(saved ? "Saved. Remove \(show.title)" : "Save \(show.title)")
+            }
 
-            // Fixed two-line slot: with ragged title heights the captions below
-            // would sit on three different baselines, which in this system reads
-            // as broken rather than considered.
-            Text(show.title)
-                .bingeBody(12)
-                .foregroundStyle(BingeTheme.ink)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(width: 104, height: 32, alignment: .topLeading)
+            // Title and name are one caption block, so they sit close and the
+            // gap that separates cards stays bigger than the gap inside one.
+            VStack(alignment: .leading, spacing: 1) {
+                Text(show.title)
+                    .bingeBody(12)
+                    .foregroundStyle(BingeTheme.ink)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: 104, height: 32, alignment: .topLeading)
 
-            Text(f.name.split(separator: " ").first.map(String.init) ?? f.name)
-                .bingeLabel(10)
-                .foregroundStyle(BingeTheme.inkMuted)
-                .lineLimit(1)
-                .frame(width: 104, alignment: .leading)
+                Text(f.name.split(separator: " ").first.map(String.init) ?? f.name)
+                    .bingeLabel(10)
+                    .foregroundStyle(BingeTheme.inkMuted)
+                    .lineLimit(1)
+                    .frame(width: 104, alignment: .leading)
+            }
         }
         .frame(width: 104, alignment: .leading)
+    }
+
+    /// One chip, three states — the row's action has to say what it already did,
+    /// or you tap it twice and can't tell whether the first one worked. Note it
+    /// sits INSIDE a NavigationLink, so it takes its own tap and doesn't push.
+    @ViewBuilder
+    private func saveChip(_ show: TVShow, filled: Bool = false) -> some View {
+        let saved = engine.savedShowIds.contains(show.tmdbId)
+        if engine.savingShowId == show.tmdbId {
+            ProgressView().tint(BingeTheme.accent).frame(minHeight: 34)
+        } else {
+            BingeChip(title: saved ? "Saved" : "Save it",
+                      filled: filled && !saved,
+                      muted: saved) {
+                Task { await engine.toggleSave(show) }
+            }
+        }
     }
 
     /// Posters are 2:3, so this slot matches them and nothing is cropped.
