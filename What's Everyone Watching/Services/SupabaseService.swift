@@ -1156,6 +1156,14 @@ class SupabaseService: NSObject, ObservableObject {
         if let bio = bio {
             try await updateUserProfile(userId: userId, displayName: displayName, bio: bio, isPublic: true)
         }
+        // Update currentUser in memory with the new display name
+        if var user = currentUser {
+            user = User(id: user.id, email: user.email, name: displayName, avatarUrl: user.avatarUrl)
+            DispatchQueue.main.async {
+                self.currentUser = user
+                self.saveSession(user: user, token: self.authToken, refreshToken: self.refreshToken)
+            }
+        }
         setProfileSetupNeeded(false)
     }
 
