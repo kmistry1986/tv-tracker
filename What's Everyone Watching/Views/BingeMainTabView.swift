@@ -169,7 +169,7 @@ struct BingeFriendsTab: View {
         .toolbar(.hidden, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .bottom, spacing: 0) { BingeTabBar(selection: $tab) }
-        .task { await engine.load() }
+        .task(id: tab) { if tab == .friends { await engine.load() } }
     }
 }
 
