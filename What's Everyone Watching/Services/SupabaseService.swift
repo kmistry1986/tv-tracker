@@ -855,13 +855,10 @@ class SupabaseService: NSObject, ObservableObject {
 
         // Fetch movie from TMDB and insert into movies table
         if let tmdbMovie = try? await TMDBService.shared.getMovie(id: movieId) {
-            var platforms: [PlatformInfo]? = nil
-            if let providers = try? await TMDBService.shared.getMovieWatchProviders(movieId: movieId) {
-                platforms = providers.platformInfoArray
-            }
+            let platforms = (try? await TMDBService.shared.getMovieWatchProviders(movieId: movieId))?.platformInfoArray
             let movie = Movie(id: movieId, tmdbId: movieId, title: tmdbMovie.title,
                             overview: tmdbMovie.overview, posterUrl: tmdbMovie.imageUrl,
-                            releaseDate: tmdbMovie.releaseDate, runtime: tmdbMovie.runtime, platforms: nil)
+                            releaseDate: tmdbMovie.releaseDate, runtime: tmdbMovie.runtime, platforms: platforms)
             try? await insertMovie(movie: movie)
         }
 

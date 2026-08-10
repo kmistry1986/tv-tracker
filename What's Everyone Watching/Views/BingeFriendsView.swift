@@ -111,7 +111,7 @@ final class UsersEngine: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
-        var allFriends = (try? await supabase.fetchFriends(userId: userId)) ?? []
+        let allFriends = (try? await supabase.fetchFriends(userId: userId)) ?? []
         print("👥 fetchFriends returned \(allFriends.count) total friend entries")
         // Deduplicate friends by ID (keep first occurrence)
         var seenIds = Set<String>()

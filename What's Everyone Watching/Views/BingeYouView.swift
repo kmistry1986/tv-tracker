@@ -341,7 +341,7 @@ struct BingeYouView: View {
             .sheet(isPresented: $showFilters) { filterSheet }
             // Sort options differ per section, so an index doesn't survive the
             // switch; filters are properties of the title and do.
-            .onChange(of: section) { _ in sortMode = 0 }
+            .onChange(of: section) { sortMode = 0 }
             .sheet(item: $ratingTarget) { item in
                 BingeRatingSheet(title: item.show.title,
                                  posterUrl: item.show.posterUrl,
