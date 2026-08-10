@@ -394,8 +394,16 @@ struct NetflixImportView: View {
             var newFailedImports: [FailedImport] = []
             let now = Date()
 
+            // Group entries by show name to avoid fetching the same show multiple times
+            var entriesByShow: [String: [NetflixCSVParser.ParsedEntry]] = [:]
             for (index, entryIndex) in selectedEntries.sorted().enumerated() {
                 let entry = parsedEntries[entryIndex]
+                entriesByShow[entry.showName, default: []].append(entry)
+            }
+
+            var processedCount = 0
+            for (showName, entries) in entriesByShow {
+                let entry = entries.first! // Use first entry for this show
 
                 do {
                     if entry.isShow {
@@ -424,8 +432,9 @@ struct NetflixImportView: View {
 
                         if let firstResult = selectedResult ?? searchResults.first {
                             guard let userId = supabase.currentUser?.id else {
-                                newFailedImports.append(FailedImport(title: entry.title, timestamp: now))
-                                importProgress = index + 1
+                                newFailedImports.append(contentsOf: entries.map { FailedImport(title: $0.title, timestamp: now) })
+                                processedCount += entries.count
+                                importProgress = processedCount
                                 continue
                             }
 
@@ -439,6 +448,7 @@ struct NetflixImportView: View {
                                 )
                             }
 
+                            // Fetch show and seasons only ONCE per unique show
                             let showDetail = try await tmdb.getTVShow(id: firstResult.id)
                             let tvShow = TVShow(
                                 id: showDetail.id,
@@ -470,41 +480,46 @@ struct NetflixImportView: View {
                                 for seasonTask in seasonTasks {
                                     let seasonDetail = try await seasonTask.value
                                     for episodeDetail in seasonDetail.episodes {
-                                        var isWatched = false
-                                        if let season = entry.seasonNumber, let episodeNum = entry.episodeNumber {
-                                            isWatched = (season == episodeDetail.seasonNumber && episodeNum == episodeDetail.episodeNumber)
-                                            if isWatched {
-                                                print("✅ Matched by season/episode: S\(season)E\(episodeNum)")
+                                        // Check all entries for this show to find matches
+                                        for csvEntry in entries {
+                                            var isWatched = false
+                                            if let season = csvEntry.seasonNumber, let episodeNum = csvEntry.episodeNumber {
+                                                isWatched = (season == episodeDetail.seasonNumber && episodeNum == episodeDetail.episodeNumber)
+                                                if isWatched {
+                                                    print("✅ Matched by season/episode: S\(season)E\(episodeNum)")
+                                                }
+                                            } else if let episodeTitle = extractEpisodeTitle(from: csvEntry.title) {
+                                                let tmdbName = episodeDetail.name.lowercased()
+                                                let netflixTitle = episodeTitle.lowercased()
+                                                isWatched = tmdbName.contains(netflixTitle) || netflixTitle.contains(tmdbName)
+                                                if isWatched {
+                                                    print("📺 Matched S\(episodeDetail.seasonNumber)E\(episodeDetail.episodeNumber): '\(episodeDetail.name)' vs '\(episodeTitle)'")
+                                                }
                                             }
-                                        } else if let episodeTitle = extractEpisodeTitle(from: entry.title) {
-                                            let tmdbName = episodeDetail.name.lowercased()
-                                            let netflixTitle = episodeTitle.lowercased()
-                                            isWatched = tmdbName.contains(netflixTitle) || netflixTitle.contains(tmdbName)
-                                            print("📺 Checking S\(episodeDetail.seasonNumber)E\(episodeDetail.episodeNumber): '\(episodeDetail.name)' vs '\(episodeTitle)' — match: \(isWatched)")
-                                        }
 
-                                        let tmdbEpisode = Episode(
-                                            id: nil,
-                                            showId: firstResult.id,
-                                            tmdbId: episodeDetail.id,
-                                            seasonNumber: episodeDetail.seasonNumber,
-                                            episodeNumber: episodeDetail.episodeNumber,
-                                            name: episodeDetail.name,
-                                            overview: episodeDetail.overview ?? "",
-                                            airDate: episodeDetail.airDate,
-                                            userId: userId,
-                                            watched: isWatched,
-                                            watchedAt: isWatched ? entry.date : nil,
-                                            showTitle: showDetail.name
-                                        )
-
-                                        do {
-                                            try await supabase.insertEpisode(episode: tmdbEpisode)
                                             if isWatched {
-                                                print("✅ Inserted watched episode S\(episodeDetail.seasonNumber)E\(episodeDetail.episodeNumber): \(episodeDetail.name)")
+                                                let tmdbEpisode = Episode(
+                                                    id: nil,
+                                                    showId: firstResult.id,
+                                                    tmdbId: episodeDetail.id,
+                                                    seasonNumber: episodeDetail.seasonNumber,
+                                                    episodeNumber: episodeDetail.episodeNumber,
+                                                    name: episodeDetail.name,
+                                                    overview: episodeDetail.overview ?? "",
+                                                    airDate: episodeDetail.airDate,
+                                                    userId: userId,
+                                                    watched: isWatched,
+                                                    watchedAt: isWatched ? csvEntry.date : nil,
+                                                    showTitle: showDetail.name
+                                                )
+
+                                                do {
+                                                    try await supabase.insertEpisode(episode: tmdbEpisode)
+                                                    print("✅ Inserted watched episode S\(episodeDetail.seasonNumber)E\(episodeDetail.episodeNumber): \(episodeDetail.name)")
+                                                } catch {
+                                                    print("⚠️ Could not insert episode S\(episodeDetail.seasonNumber)E\(episodeDetail.episodeNumber): \(error)")
+                                                }
                                             }
-                                        } catch {
-                                            print("⚠️ Could not insert episode S\(episodeDetail.seasonNumber)E\(episodeDetail.episodeNumber): \(error)")
                                         }
                                     }
                                 }
@@ -512,9 +527,13 @@ struct NetflixImportView: View {
                                 print("Could not fetch show episodes: \(error)")
                             }
 
-                            successCount += 1
+                            successCount += entries.count
+                            processedCount += entries.count
+                            importProgress = processedCount
                         } else {
-                            newFailedImports.append(FailedImport(title: entry.title, timestamp: now))
+                            newFailedImports.append(contentsOf: entries.map { FailedImport(title: $0.title, timestamp: now) })
+                            processedCount += entries.count
+                            importProgress = processedCount
                         }
                     } else {
                         var searchResults = try await tmdb.searchMovie(query: entry.showName)
@@ -529,8 +548,9 @@ struct NetflixImportView: View {
 
                         if let firstResult = searchResults.first {
                             guard let userId = supabase.currentUser?.id else {
-                                newFailedImports.append(FailedImport(title: entry.title, timestamp: now))
-                                importProgress = index + 1
+                                newFailedImports.append(contentsOf: entries.map { FailedImport(title: $0.title, timestamp: now) })
+                                processedCount += entries.count
+                                importProgress = processedCount
                                 continue
                             }
 
@@ -551,17 +571,19 @@ struct NetflixImportView: View {
                             if !existingMovies.contains(where: { $0.movieId == firstResult.id }) {
                                 try await supabase.insertUserMovie(userId: userId, movieId: firstResult.id, watchedDate: entry.date)
                             }
-                            successCount += 1
+                            successCount += entries.count
+                            processedCount += entries.count
+                            importProgress = processedCount
                         } else {
-                            newFailedImports.append(FailedImport(title: entry.title, timestamp: now))
+                            newFailedImports.append(contentsOf: entries.map { FailedImport(title: $0.title, timestamp: now) })
+                            processedCount += entries.count
+                            importProgress = processedCount
                         }
                     }
                 } catch {
-                    newFailedImports.append(FailedImport(title: entry.title, timestamp: now))
-                }
-
-                DispatchQueue.main.async {
-                    importProgress = index + 1
+                    newFailedImports.append(contentsOf: entries.map { FailedImport(title: $0.title, timestamp: now) })
+                    processedCount += entries.count
+                    importProgress = processedCount
                 }
             }
 
