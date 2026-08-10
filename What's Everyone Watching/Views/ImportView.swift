@@ -579,6 +579,45 @@ private func findShowByEpisodeName(shows: [TVSearchResult], episodeTitle: String
     }
 }
 
+struct ImportEntryRow: View {
+    let entry: NetflixCSVParser.ParsedEntry
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .foregroundColor(isSelected ? .blue : .gray)
+                .font(.system(size: 18))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(entry.title)
+                    .font(.body)
+                    .fontWeight(.semibold)
+                    .lineLimit(2)
+
+                HStack(spacing: 12) {
+                    if let seasonNum = entry.seasonNumber {
+                        Text("S\(seasonNum)")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                    if let episodeNum = entry.episodeNumber {
+                        Text("E\(episodeNum)")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                    Text(entry.showName)
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+            }
+
+            Spacer()
+        }
+        .contentShape(Rectangle())
+        .opacity(isSelected ? 1.0 : 0.7)
+    }
+}
 
 #Preview {
     ImportView()
