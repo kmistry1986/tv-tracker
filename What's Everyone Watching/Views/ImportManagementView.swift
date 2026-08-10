@@ -883,6 +883,49 @@ struct ImportEntryRow: View {
     }
 }
 
+struct ImportIssuePayload: Codable {
+    let type: String  // "unmatched" or "failed"
+    let showName: String
+    let csvTitle: String
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case showName = "show_name"
+        case csvTitle = "csv_title"
+    }
+}
+
+struct ImportIssue: Codable, Identifiable {
+    let id = UUID()
+    let type: String  // "unmatched" or "failed"
+    let showName: String
+    let csvTitle: String
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case type, showName, csvTitle
+        case createdAt = "created_at"
+    }
+}
+
+/*
+ SQL to create import_issues table:
+
+ CREATE TABLE import_issues (
+   id BIGSERIAL PRIMARY KEY,
+   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+   type TEXT NOT NULL CHECK (type IN ('unmatched', 'failed')),
+   show_name TEXT NOT NULL,
+   csv_title TEXT NOT NULL,
+   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+   FOREIGN KEY (user_id) REFERENCES auth.users(id)
+ );
+
+ CREATE INDEX idx_import_issues_user_created ON import_issues(user_id, created_at DESC);
+ ALTER TABLE import_issues ENABLE ROW LEVEL SECURITY;
+ CREATE POLICY import_issues_own ON import_issues FOR ALL USING (auth.uid() = user_id);
+ */
+
 struct PrimeVideoImportView: View {
     var body: some View {
         VStack(spacing: 20) {

@@ -1302,6 +1302,51 @@ class SupabaseService: NSObject, ObservableObject {
         throw NSError(domain: "API", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Update failed with status \(statusCode)"])
     }
 
+    // MARK: - Import Issues
+
+    func insertImportIssues(userId: String, issues: [ImportIssuePayload]) async throws {
+        guard !issues.isEmpty else { return }
+
+        // Stamp user_id on each issue
+        let issuesWithUserId = issues.map { issue in
+            [
+                "user_id": userId,
+                "type": issue.type,
+                "show_name": issue.showName,
+                "csv_title": issue.csvTitle
+            ]
+        }
+
+        let endpoint = "rest/v1/import_issues"
+        let url = URL(string: "\(supabaseURL)/\(endpoint)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("Prefer", forHTTPHeaderField: "return=minimal")
+
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .useDefaultKeys
+        request.httpBody = try encoder.encode(issuesWithUserId)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+
+        guard statusCode == 201 else {
+            throw NSError(domain: "API", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Insert issues failed with status \(statusCode)"])
+        }
+    }
+
+    func fetchImportIssues(userId: String) async throws -> [ImportIssuePayload] {
+        let endpoint = "rest/v1/import_issues?user_id=eq.\(userId)&order=created_at.desc"
+        return try await fetch(endpoint: endpoint)
+    }
+
+    func clearImportIssues(userId: String) async throws {
+        let endpoint = "rest/v1/import_issues?user_id=eq.\(userId)"
+        try await deleteRequest(endpoint: endpoint)
+    }
+
     // MARK: - Private Helpers
     
     private func fetch<T: Decodable>(endpoint: String) async throws -> [T] {
