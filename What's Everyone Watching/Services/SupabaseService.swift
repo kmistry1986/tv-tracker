@@ -525,6 +525,23 @@ class SupabaseService: NSObject, ObservableObject {
         try await insertUserShow(userId: userId, showId: showId, watchedDate: today)
     }
 
+    /// The other direction, and deliberately NOT `removeShowFromLibrary` — that
+    /// one hard-deletes every episode row, so parking a half-watched show would
+    /// destroy the record of what you'd actually seen, with no undo.
+    ///
+    /// Episode ticks are history; the list a show sits in is intent. Moving a
+    /// title to the watchlist changes the intent only: the `user_shows` row goes
+    /// (so it leaves Started and the lists stay mutually exclusive), the
+    /// `episodes` rows stay, and moving it back restores the progress exactly.
+    func moveLibraryToWatchlist(userId: String, showId: Int) async throws {
+        let endpoint = "\(supabaseURL)/rest/v1/user_shows?user_id=eq.\(userId)&show_id=eq.\(showId)"
+        try await deleteRequest(endpoint: endpoint)
+
+        let existing = (try? await fetchWatchlistShows(userId: userId)) ?? []
+        guard !existing.contains(where: { $0.showId == showId }) else { return }
+        try await addToWatchlistShow(userId: userId, showId: showId, priority: "high")
+    }
+
     func removeFromLibraryIfNoWatchedEpisodes(userId: String, showId: Int) async throws {
         let watchedEpisodes = (try? await fetchUserEpisodes(userId: userId)) ?? []
         let episodesForShow = watchedEpisodes.filter { $0.showId == showId }
@@ -1005,6 +1022,7 @@ class SupabaseService: NSObject, ObservableObject {
     func getFriendCurrentlyWatching(friendId: String) async throws -> [TVShow] {
         // Get all episodes for this friend
         let episodes = try await fetchUserEpisodes(userId: friendId)
+        print("👥 getFriendCurrentlyWatching(\(friendId)): fetched \(episodes.count) episodes")
 
         // Group by show_id to count watched episodes per show
         var episodesByShow: [Int: [Episode]] = [:]
@@ -1014,23 +1032,33 @@ class SupabaseService: NSObject, ObservableObject {
             }
             episodesByShow[episode.showId]?.append(episode)
         }
+        print("   Grouped into \(episodesByShow.count) shows")
 
         var shows: [TVShow] = []
         for (showId, showEpisodes) in episodesByShow {
-            // Count watched episodes
+            // Count watched episodes for this user
             let watchedEpisodes = showEpisodes.filter { $0.watched }.count
-            let totalEpisodes = showEpisodes.count
+
+            // Get the show to find TOTAL episode count (not just what user watched)
+            guard let show = try? await fetchShowById(id: showId) else { continue }
+            let totalEpisodes = show.numberOfEpisodes
+
+            print("   Show \(showId): \(watchedEpisodes)/\(totalEpisodes) watched", terminator: "")
 
             // Apply same "You Started" logic:
             // - watchedEpisodes > 0 (has watched at least one)
             // - watchedEpisodes < totalEpisodes (not all finished)
             if watchedEpisodes > 0 && watchedEpisodes < totalEpisodes {
-                if let show = try? await fetchShowById(id: showId) {
-                    shows.append(show)
-                }
+                print(" → in progress")
+                shows.append(show)
+            } else if watchedEpisodes == 0 {
+                print(" → not started")
+            } else {
+                print(" → finished")
             }
         }
 
+        print("   Result: \(shows.count) shows in progress")
         return shows
     }
 

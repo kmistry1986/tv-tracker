@@ -29,6 +29,9 @@ struct BingeShowDetailView: View {
     @State private var rating: Int?
     @State private var review: String?
     @State private var isInLibrary = false
+    /// On your watchlist. The page could previously say nothing about this — you
+    /// could save from Search, arrive here from Friends, and see no sign of it.
+    @State private var isSaved = false
     @State private var isLoading = true
     @State private var isWorking = false
     @State private var showAbout = false
@@ -203,45 +206,79 @@ struct BingeShowDetailView: View {
 
     private var actions: some View {
         let isFullyWatched = totalCount > 0 && watchedCount == totalCount
-        let isPartiallyWatched = totalCount > 0 && watchedCount > 0 && watchedCount < totalCount
-        let buttonText: String
-        if isWorking {
-            buttonText = "Working…"
-        } else if isFullyWatched {
-            buttonText = "Watched"
-        } else if isPartiallyWatched {
-            buttonText = "Partially\nWatched"
-        } else {
-            buttonText = "Mark as Watched"
-        }
+        let isWatching = !isFullyWatched && (isInLibrary || watchedCount > 0)
 
-        return HStack(spacing: 10) {
-            Button { Task { await finishShow() } } label: {
-                HStack {
-                    Text(buttonText)
-                        .bingeLabel(12)
-                    Spacer(minLength: 8)
-                    Text("✓").bingeLabel(12)
-                }
-                .padding(.horizontal, 14)
-                .frame(maxWidth: .infinity, minHeight: BingeTheme.minTap, alignment: .leading)
-                .foregroundStyle(isFullyWatched || isPartiallyWatched ? .white : .white)
-                .background(isFullyWatched || isPartiallyWatched ? BingeTheme.accent : BingeTheme.accent)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(isWorking)
-
-            Button { showSeasonSheet = true } label: {
-                Text("Pick seasons").bingeLabel(12)
-                    .padding(.horizontal, 14)
-                    .frame(maxWidth: .infinity, minHeight: BingeTheme.minTap, alignment: .leading)
-                    .overlay(Rectangle().stroke(BingeTheme.ink, lineWidth: 1))
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+        // Save → Watching → Watched is the actual life of a title, and the same
+        // three lists the You tab keeps — so the row states where this stands
+        // with you rather than offering one verb that mutates into a status.
+        return HStack(spacing: 0) {
+            stateCell("Save", on: isSaved, first: true) { Task { await setState(.saved) } }
+            stateCell("Watching", on: isWatching) { Task { await setState(.watching) } }
+            stateCell("Watched", on: isFullyWatched, accent: true) { Task { await setState(.watched) } }
         }
+        .opacity(isWorking ? 0.5 : 1)
+        .allowsHitTesting(!isWorking)
         .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 14)
+    }
+
+    private func stateCell(_ title: String,
+                           on: Bool,
+                           first: Bool = false,
+                           accent: Bool = false,
+                           action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).bingeLabel(12)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .frame(maxWidth: .infinity, minHeight: BingeTheme.minTap, alignment: .leading)
+                .padding(.horizontal, 12)
+                .foregroundStyle(on ? BingeTheme.ground : BingeTheme.inkMuted)
+                .background(on ? (accent ? BingeTheme.accent : BingeTheme.ink) : Color.clear)
+                .overlay(Rectangle().stroke(BingeTheme.ink, lineWidth: 1))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
+    }
+
+    private enum ShowState { case saved, watching, watched }
+
+    /// One entry point for all three, so the lists can never disagree.
+    private func setState(_ next: ShowState) async {
+        guard let userId = supabase.currentUser?.id else { return }
+        isWorking = true
+        defer { isWorking = false }
+        let id = dbShowId ?? tmdbId
+
+        switch next {
+        case .saved:
+            // Episode ticks survive — see moveLibraryToWatchlist. "5 of 12" stays
+            // true underneath; the show just stops claiming to be in progress.
+            try? await supabase.moveLibraryToWatchlist(userId: userId, showId: id)
+            isInLibrary = false
+            isSaved = true
+            youEngine.library.removeAll { $0.show.id == id }
+
+        case .watching:
+            if isSaved {
+                try? await supabase.moveWatchlistToLibrary(userId: userId, showId: id)
+                try? await supabase.removeShowFromWatchlist(userId: userId, showId: id)
+                isSaved = false
+            } else if isInLibrary && watchedCount == totalCount && totalCount > 0 {
+                // Coming back from Watched: clear the ticks but keep the show.
+                await setAllSeasons(watched: false)
+            }
+            isInLibrary = true
+
+        case .watched:
+            if isSaved {
+                try? await supabase.moveWatchlistToLibrary(userId: userId, showId: id)
+                try? await supabase.removeShowFromWatchlist(userId: userId, showId: id)
+                isSaved = false
+            }
+            await finishShow()
+            isInLibrary = true
+        }
     }
 
     private func about(_ overview: String) -> some View {
@@ -407,6 +444,13 @@ struct BingeShowDetailView: View {
             let list = d.numberOfSeasons > 0 ? Array(1...d.numberOfSeasons) : []
             seasons = list
             if !list.contains(selectedSeason) { selectedSeason = list.first ?? 1 }
+
+            // The page has to know which of the three lists this is in, or the
+            // row can't state it.
+            if let saved = try? await supabase.fetchWatchlistShows(userId: userId) {
+                let id = dbShowId ?? tmdbId
+                isSaved = saved.contains { $0.showId == id || $0.showId == tmdbId }
+            }
 
             // Fetch all seasons and watch providers in parallel
             await withTaskGroup(of: (seasonNumber: Int, episodes: [EpisodeDetail])?.self) { group in

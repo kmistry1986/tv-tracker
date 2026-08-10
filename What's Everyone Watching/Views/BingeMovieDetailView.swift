@@ -21,6 +21,11 @@ struct BingeMovieDetailView: View {
     @State private var rating: Int?
     @State private var review: String?
     @State private var isInLibrary = false
+    /// On your watchlist. Same as the show page: without this the screen can't
+    /// say which of your lists it's in.
+    @State private var isSaved = false
+    /// watchlist_movies row id — that table only deletes by row id.
+    @State private var savedRowId: Int? = nil
     @State private var isLoading = true
     @State private var isWorking = false
     @State private var showAbout = false
@@ -44,10 +49,8 @@ struct BingeMovieDetailView: View {
                     LazyVStack(spacing: 0) {
                         subject
                         BingeRule(strong: true)
-                        if isInLibrary {
-                            actions
-                            BingeRule(strong: true)
-                        }
+                        actions
+                        BingeRule(strong: true)
                         if let overview = details?.overview, !overview.isEmpty {
                             about(overview)
                             BingeRule(strong: true)
@@ -129,25 +132,80 @@ struct BingeMovieDetailView: View {
         return parts.isEmpty ? "Movie" : parts.joined(separator: " · ")
     }
 
+    /// The show page's Save → Watching → Watched, minus the middle: a film has
+    /// no midpoint to be at. Two cells, same geometry, same rules — so the two
+    /// detail pages read as one design rather than two.
     private var actions: some View {
-        HStack(spacing: 10) {
-            Button { Task { await markWatched() } } label: {
-                HStack {
-                    Text(isWorking ? "Working…" : "Mark watched")
-                        .bingeLabel(12)
-                    Spacer(minLength: 8)
-                    Text("✓").bingeLabel(12)
-                }
-                .padding(.horizontal, 14)
-                .frame(maxWidth: .infinity, minHeight: BingeTheme.minTap, alignment: .leading)
-                .background(BingeTheme.accent)
-                .foregroundStyle(.white)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(isWorking)
+        HStack(spacing: 0) {
+            stateCell("Save", on: isSaved) { Task { await setState(saved: true) } }
+            stateCell("Watched", on: isInLibrary, accent: true) { Task { await setState(saved: false) } }
         }
+        .opacity(isWorking ? 0.5 : 1)
+        .allowsHitTesting(!isWorking)
         .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 14)
+    }
+
+    private func stateCell(_ title: String,
+                           on: Bool,
+                           accent: Bool = false,
+                           action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).bingeLabel(12)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, minHeight: BingeTheme.minTap, alignment: .leading)
+                .padding(.horizontal, 12)
+                .foregroundStyle(on ? BingeTheme.ground : BingeTheme.inkMuted)
+                .background(on ? (accent ? BingeTheme.accent : BingeTheme.ink) : Color.clear)
+                .overlay(Rectangle().stroke(BingeTheme.ink, lineWidth: 1))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
+    }
+
+    /// One entry point for both cells, so the lists can never disagree.
+    /// `removeMovieFromLibrary` is safe to use here — unlike the show version it
+    /// deletes no episode history, because a film has none.
+    private func setState(saved: Bool) async {
+        guard let userId = supabase.currentUser?.id else { return }
+        let id = dbMovieId ?? tmdbId
+        isWorking = true
+        defer { isWorking = false }
+
+        if saved {
+            if isSaved {                                   // tap Save again to unsave
+                if let rowId = savedRowId {
+                    try? await supabase.removeFromWatchlistMovie(id: rowId)
+                }
+                isSaved = false; savedRowId = nil
+                return
+            }
+            if isInLibrary {
+                try? await supabase.removeMovieFromLibrary(userId: userId, movieId: id)
+                isInLibrary = false
+                youEngine.library.removeAll { $0.show.id == id }
+            }
+            try? await supabase.addToWatchlistMovie(userId: userId, movieId: id, priority: "high")
+            isSaved = true
+            await refreshSavedRow(userId: userId, movieId: id)
+        } else {
+            if isInLibrary {                               // tap Watched again to undo
+                try? await supabase.removeMovieFromLibrary(userId: userId, movieId: id)
+                isInLibrary = false
+                youEngine.library.removeAll { $0.show.id == id }
+                return
+            }
+            if isSaved, let rowId = savedRowId {
+                try? await supabase.removeFromWatchlistMovie(id: rowId)
+                isSaved = false; savedRowId = nil
+            }
+            await markWatched()
+        }
+    }
+
+    private func refreshSavedRow(userId: String, movieId: Int) async {
+        guard let rows = try? await supabase.fetchWatchlistMovies(userId: userId) else { return }
+        savedRowId = rows.first { $0.movieId == movieId }?.id
     }
 
     private func about(_ overview: String) -> some View {
@@ -185,6 +243,12 @@ struct BingeMovieDetailView: View {
                 review = userMovie.review
                 isInLibrary = true
             }
+
+            if let saved = try? await supabase.fetchWatchlistMovies(userId: userId),
+               let row = saved.first(where: { $0.movieId == (dbMovieId ?? tmdbId) }) {
+                isSaved = true
+                savedRowId = row.id
+            }
         } catch {
             print("BingeMovieDetailView load failed: \(error)")
         }
@@ -192,8 +256,7 @@ struct BingeMovieDetailView: View {
     }
 
     private func markWatched() async {
-        isWorking = true
-        guard let userId = supabase.currentUser?.id else { isWorking = false; return }
+        guard let userId = supabase.currentUser?.id else { return }
 
         do {
             let today = ISO8601DateFormatter().string(from: Date())
@@ -205,6 +268,5 @@ struct BingeMovieDetailView: View {
         } catch {
             print("Failed to mark movie as watched: \(error)")
         }
-        isWorking = false
     }
 }

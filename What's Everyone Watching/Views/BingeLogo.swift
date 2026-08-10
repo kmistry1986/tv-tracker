@@ -36,7 +36,10 @@ struct BingeMark: View {
         knockout ? BingeTheme.ground : (onDark ? BingeTheme.ground : BingeTheme.ink)
     }
     private var arrowFill: Color {
-        knockout ? BingeTheme.accentTint : BingeTheme.accent
+        // accentTint exists so small accent TEXT stays legible on ink. The mark
+        // is large solid shapes — it should carry the true signal red, or the
+        // app icon comes out salmon.
+        BingeTheme.accent
     }
 
     var body: some View {
