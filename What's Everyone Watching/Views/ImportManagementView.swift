@@ -258,7 +258,7 @@ struct ImportManagementView: View {
                 BingeRule()
                 // One honest line. It used to be half a segmented control
                 // advertising an absence every time the sheet opened.
-                Text("Prime Video isn't supported yet.")
+                Text("Prime Video history upload support coming soon")
                     .bingeBody(13).foregroundStyle(BingeTheme.inkFaint)
                     .padding(.horizontal, BingeTheme.gutter)
                     .padding(.top, 15).padding(.bottom, 24)
@@ -931,7 +931,7 @@ struct ImportManagementView: View {
         var out: [GapProposal] = []
 
         for (season, watched) in watchedBySeason {
-            guard watched.count >= 2 else { continue }
+            guard !watched.isEmpty else { continue }
             let sorted = watched.sorted()
 
             // Rows Netflix gave us for this season that we couldn't place. A row
@@ -941,6 +941,21 @@ struct ImportManagementView: View {
             var budget = seasonLeftovers.count
             let date = seasonLeftovers[0].date
 
+            // Gap at the beginning: if S5E3 is first watched, propose E1-E2
+            if let firstWatched = sorted.first, firstWatched > 1 {
+                let gap = firstWatched - 1
+                if gap > 0, gap <= Self.maxGap, gap <= budget {
+                    budget -= gap
+                    out.append(GapProposal(tmdbShowId: showId,
+                                           showName: showName,
+                                           season: season,
+                                           episodes: Array(1...(firstWatched - 1)),
+                                           unplacedCount: gap,
+                                           watchedDate: date))
+                }
+            }
+
+            // Gaps between consecutive watched episodes
             for (index, low) in sorted.enumerated() where index + 1 < sorted.count {
                 let high = sorted[index + 1]
                 let gap = high - low - 1
@@ -950,7 +965,7 @@ struct ImportManagementView: View {
                                        showName: showName,
                                        season: season,
                                        episodes: Array((low + 1)...(high - 1)),
-                                       unplacedCount: seasonLeftovers.count,
+                                       unplacedCount: gap,
                                        watchedDate: date))
             }
         }
