@@ -55,7 +55,6 @@
 				000000000000000000000020 /* Products */,
 				552DC89E3023E326003AB9F6 /* StreamingPlatformSelector.swift */,
 				552DC8A03023E355003AB9F6 /* SettingsView.swift */,
-				554B9ECC302AF64E00958D5F /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -65,14 +64,6 @@
 				000000000000000000000120 /* What's Everyone Watching.app */,
 			);
 			name = Products;
-			sourceTree = "<group>";
-		};
-		554B9ECC302AF64E00958D5F /* Recovered References */ = {
-			isa = PBXGroup;
-			children = (
-				5539D5F2302A471500C44EF2 /* Assets.xcassets */,
-			);
-			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
