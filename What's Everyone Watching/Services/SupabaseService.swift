@@ -1339,12 +1339,12 @@ class SupabaseService: NSObject, ObservableObject {
     }
 
     func fetchImportIssues(userId: String) async throws -> [ImportIssue] {
-        let endpoint = "rest/v1/import_issues?user_id=eq.\(userId)&order=created_at.desc"
+        let endpoint = "\(supabaseURL)/rest/v1/import_issues?user_id=eq.\(userId)&order=created_at.desc"
         return try await fetch(endpoint: endpoint)
     }
 
     func clearImportIssues(userId: String) async throws {
-        let endpoint = "rest/v1/import_issues?user_id=eq.\(userId)"
+        let endpoint = "\(supabaseURL)/rest/v1/import_issues?user_id=eq.\(userId)"
         try await deleteRequest(endpoint: endpoint)
     }
 
