@@ -334,6 +334,7 @@ struct TVShowDetailView: View {
     }
 
     private func addToLibrary() {
+        print("🎬 [WATCHED ACTION] User clicked 'Add to Library' / 'Mark as Watched' for show: \(show?.name ?? "Unknown") (ID: \(showId))")
         showMarkWatchedModal = true
     }
 
@@ -361,12 +362,14 @@ struct TVShowDetailView: View {
     }
 
     private func saveWatchedEpisodes(_ episodeIds: [Int]) {
+        print("🎬 [SAVE EPISODES] Starting saveWatchedEpisodes for show \(show?.name ?? "Unknown") (ID: \(showId)). Episodes: \(episodeIds.isEmpty ? "ALL" : "\(episodeIds.count)")")
         guard let userId = supabase.currentUser?.id else {
             print("Error: User not logged in")
             return
         }
         Task {
             do {
+                print("🎬 [SAVE EPISODES] userId=\(userId), showId=\(showId)")
                 // ALWAYS ensure the show exists in tv_shows table first (required for foreign key)
                 if let show = show {
                     let tvShow = TVShow(
@@ -422,13 +425,14 @@ struct TVShowDetailView: View {
                             try await supabase.insertEpisode(episode: episodeRecord)
                         }
                     }
-                    print("✅ All episodes marked as watched")
+                    print("✅ ALL EPISODES MARKED AS WATCHED - Show: \(show?.name ?? "Unknown"), Total episodes: \(show!.numberOfEpisodes)")
                 } else {
                     // Mark selected episodes as watched
                     for episodeId in episodeIds {
                         print("Marking episode \(episodeId) as watched")
                     }
                 }
+                print("✅ [SAVE EPISODES COMPLETE] Successfully saved watched episodes for show \(show?.name ?? "Unknown")")
             } catch {
                 print("❌ Error saving watched episodes: \(error)")
                 DispatchQueue.main.async {

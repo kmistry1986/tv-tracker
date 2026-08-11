@@ -352,7 +352,7 @@ class SupabaseService: NSObject, ObservableObject {
     }
     
     func fetchEpisodes(showId: Int, userId: String) async throws -> [Episode] {
-        let endpoint = "\(supabaseURL)/rest/v1/episodes?show_id=eq.\(showId)&user_id=eq.\(userId)"
+        let endpoint = "\(supabaseURL)/rest/v1/episodes?show_id=eq.\(showId)&user_id=eq.\(userId)&limit=10000"
         return try await fetch(endpoint: endpoint)
     }
 
@@ -608,12 +608,12 @@ class SupabaseService: NSObject, ObservableObject {
     }
 
     func fetchUserEpisodes(userId: String) async throws -> [Episode] {
-        let endpoint = "\(supabaseURL)/rest/v1/episodes?user_id=eq.\(userId)&order=watched_at.desc"
+        let endpoint = "\(supabaseURL)/rest/v1/episodes?user_id=eq.\(userId)&order=watched_at.desc&limit=10000"
         return try await fetch(endpoint: endpoint)
     }
     
     func fetchUserShows(userId: String) async throws -> [UserShow] {
-        let endpoint = "\(supabaseURL)/rest/v1/user_shows?user_id=eq.\(userId)&order=watched_date.desc"
+        let endpoint = "\(supabaseURL)/rest/v1/user_shows?user_id=eq.\(userId)&order=watched_date.desc&limit=10000"
         return try await fetch(endpoint: endpoint)
     }
     
@@ -749,7 +749,7 @@ class SupabaseService: NSObject, ObservableObject {
     }
 
     func fetchUserMovies(userId: String) async throws -> [UserMovie] {
-        let endpoint = "\(supabaseURL)/rest/v1/user_movies?user_id=eq.\(userId)"
+        let endpoint = "\(supabaseURL)/rest/v1/user_movies?user_id=eq.\(userId)&limit=10000"
         return try await fetch(endpoint: endpoint)
     }
 
@@ -759,14 +759,14 @@ class SupabaseService: NSObject, ObservableObject {
     }
 
     func fetchActivityFeed(userId: String) async throws -> [ActivityFeedItem] {
-        let endpoint = "\(supabaseURL)/rest/v1/activity?user_id=eq.\(userId)&order=created_at.desc"
+        let endpoint = "\(supabaseURL)/rest/v1/activity?user_id=eq.\(userId)&order=created_at.desc&limit=10000"
         return try await fetch(endpoint: endpoint)
     }
     
     // MARK: - Watchlist Operations
     
     func fetchWatchlistShows(userId: String) async throws -> [WatchlistShow] {
-        let endpoint = "\(supabaseURL)/rest/v1/watchlist_shows?user_id=eq.\(userId)&order=priority.asc,added_at.desc"
+        let endpoint = "\(supabaseURL)/rest/v1/watchlist_shows?user_id=eq.\(userId)&order=priority.asc,added_at.desc&limit=10000"
         print("📋 Fetching watchlist for user: \(userId)")
         do {
             let result: [WatchlistShow] = try await fetch(endpoint: endpoint)
@@ -791,7 +791,7 @@ class SupabaseService: NSObject, ObservableObject {
     }
 
     func fetchWatchlistMovies(userId: String) async throws -> [WatchlistMovie] {
-        let endpoint = "\(supabaseURL)/rest/v1/watchlist_movies?user_id=eq.\(userId)&order=priority.asc,added_at.desc"
+        let endpoint = "\(supabaseURL)/rest/v1/watchlist_movies?user_id=eq.\(userId)&order=priority.asc,added_at.desc&limit=10000"
         return try await fetch(endpoint: endpoint)
     }
 
@@ -1339,7 +1339,7 @@ class SupabaseService: NSObject, ObservableObject {
     }
 
     func fetchImportIssues(userId: String) async throws -> [ImportIssue] {
-        let endpoint = "\(supabaseURL)/rest/v1/import_issues?user_id=eq.\(userId)&order=created_at.desc"
+        let endpoint = "\(supabaseURL)/rest/v1/import_issues?user_id=eq.\(userId)&order=created_at.desc&limit=10000"
         return try await fetch(endpoint: endpoint)
     }
 

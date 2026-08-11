@@ -179,7 +179,12 @@ struct ImportManagementView: View {
                 }
                 .buttonStyle(.plain)
             } else if phase != .running {
-                Button { dismiss() } label: {
+                Button {
+                    print("✅ [ImportManagementView] Close button clicked, calling onComplete")
+                    onComplete?()
+                    print("✅ [ImportManagementView] onComplete callback finished, dismissing")
+                    dismiss()
+                } label: {
                     Text("Close").bingeLabel(13).foregroundStyle(BingeTheme.inkMuted)
                 }
                 .buttonStyle(.plain)
@@ -813,6 +818,10 @@ struct ImportManagementView: View {
         }
         await loadIssues()
         phase = .result
+        // Call onComplete callback so search engine cache gets refreshed
+        print("✅ [ImportManagementView] Import complete, calling onComplete callback")
+        onComplete?()
+        print("✅ [ImportManagementView] onComplete callback finished")
     }
 
     /// Returns the issues this show produced, and accumulates a gap proposal if

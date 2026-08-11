@@ -36,6 +36,7 @@ struct BingeMainTabView: View {
         .environmentObject(supabase)
         .environmentObject(notificationManager)
         .environmentObject(youEngine)
+        .environmentObject(searchEngine)
         .tint(BingeTheme.accent)
         .onAppear {
             // Temporary: .custom() falls back to San Francisco SILENTLY when a

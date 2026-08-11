@@ -326,18 +326,22 @@ struct ShowDetailView: View {
     }
 
     private func completeEntireShow() async {
+        print("🎬 [COMPLETE SHOW] User clicked 'Complete Show' for: \(showTitle) (ID: \(showId))")
         do {
             // Mark all episodes as watched
+            var totalEpisodeCount = 0
             for seasonNum in seasons {
                 if let episodes = episodesBySeason[seasonNum] {
                     for episode in episodes {
                         try await supabase.updateEpisodeWatched(episodeId: episode.id, watched: true)
+                        totalEpisodeCount += 1
                         DispatchQueue.main.async {
                             watchedEpisodes.insert(episode.id)
                         }
                     }
                 }
             }
+            print("✅ [COMPLETE SHOW] Marked \(totalEpisodeCount) episodes as watched for \(showTitle)")
             loadShowDetails()
 
             // Check if user has rated - if not, prompt them or force rating modal

@@ -371,16 +371,28 @@ struct ImportView: View {
                                     let seasonDetail = try await tmdb.getTVSeason(showId: firstResult.id, seasonNumber: season)
                                     for episodeDetail in seasonDetail.episodes {
                                         var isWatched = false
-                                        if let season = entry.seasonNumber, let episodeNum = entry.episodeNumber {
-                                            isWatched = (season == episodeDetail.seasonNumber && episodeNum == episodeDetail.episodeNumber)
+                                        // If we have both season and episode number from Netflix, match exactly
+                                        if let entrySeasonNum = entry.seasonNumber, let episodeNum = entry.episodeNumber {
+                                            isWatched = (entrySeasonNum == episodeDetail.seasonNumber && episodeNum == episodeDetail.episodeNumber)
                                             if isWatched {
-                                                print("✅ Matched by season/episode: S\(season)E\(episodeNum)")
+                                                print("✅ Matched by season/episode: S\(entrySeasonNum)E\(episodeNum)")
                                             }
-                                        } else if let episodeTitle = extractEpisodeTitle(from: entry.title) {
+                                        }
+                                        // If we only have season number (common for Netflix imports), mark all episodes in that season as watched
+                                        else if let entrySeasonNum = entry.seasonNumber, entry.episodeNumber == nil {
+                                            isWatched = (entrySeasonNum == episodeDetail.seasonNumber)
+                                            if isWatched {
+                                                print("✅ Marked S\(entrySeasonNum)E\(episodeDetail.episodeNumber) as watched (season import)")
+                                            }
+                                        }
+                                        // Otherwise try fuzzy matching on episode title
+                                        else if let episodeTitle = extractEpisodeTitle(from: entry.title) {
                                             let tmdbName = episodeDetail.name.lowercased()
                                             let netflixTitle = episodeTitle.lowercased()
                                             isWatched = tmdbName.contains(netflixTitle) || netflixTitle.contains(tmdbName)
-                                            print("📺 Checking S\(episodeDetail.seasonNumber)E\(episodeDetail.episodeNumber): '\(episodeDetail.name)' vs '\(episodeTitle)' — match: \(isWatched)")
+                                            if isWatched {
+                                                print("📺 Matched S\(episodeDetail.seasonNumber)E\(episodeDetail.episodeNumber) by title: '\(episodeDetail.name)' vs '\(episodeTitle)'")
+                                            }
                                         }
 
                                         let tmdbEpisode = Episode(

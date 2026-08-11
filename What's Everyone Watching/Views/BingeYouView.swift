@@ -153,23 +153,40 @@ final class BingeYouEngine: ObservableObject {
         }
         defer { isLoading = false }
 
-        // Watched episodes, grouped by show — the source of progress.
-        let episodes = (try? await supabase.fetchUserEpisodes(userId: userId)) ?? []
-        print("📺 Loaded \(episodes.count) episodes")
+        let shows = (try? await supabase.fetchUserShows(userId: userId)) ?? []
+        print("📺 Loaded \(shows.count) user shows")
+
+        // Count watched episodes per show by querying each show individually
+        // This avoids the 1000-row limit that would truncate old shows
         var counts: [Int: Int] = [:]
         var latest: [Int: (Int, Int)] = [:]
-        for ep in episodes where ep.watched {
-            counts[ep.showId, default: 0] += 1
-            let here = (ep.seasonNumber, ep.episodeNumber)
-            if let seen = latest[ep.showId] {
-                if here > seen { latest[ep.showId] = here }
-            } else {
-                latest[ep.showId] = here
+        for show in shows {
+            let episodes = (try? await supabase.fetchEpisodes(showId: show.showId, userId: userId)) ?? []
+            var watchedCount = 0
+            var lastSeason: Int? = nil
+            var lastEpisode: Int? = nil
+            for ep in episodes where ep.watched {
+                watchedCount += 1
+                let here = (ep.seasonNumber, ep.episodeNumber)
+                if let (s, e) = lastSeason.map({ ($0, lastEpisode ?? 0) }) {
+                    if here > (s, e) {
+                        lastSeason = ep.seasonNumber
+                        lastEpisode = ep.episodeNumber
+                    }
+                } else {
+                    lastSeason = ep.seasonNumber
+                    lastEpisode = ep.episodeNumber
+                }
+            }
+            counts[show.showId] = watchedCount
+            if let s = lastSeason, let e = lastEpisode {
+                latest[show.showId] = (s, e)
+            }
+            if show.showId == 688 {
+                print("📺 [load] West Wing (688): \(watchedCount) watched episodes")
             }
         }
 
-        let shows = (try? await supabase.fetchUserShows(userId: userId)) ?? []
-        print("📺 Loaded \(shows.count) user shows")
         var built: [BingeLibraryItem] = []
         var seenShowIds = Set<Int>()
 
@@ -312,6 +329,7 @@ struct BingeSwipeRow<Content: View>: View {
 struct BingeYouView: View {
     @EnvironmentObject private var supabase: SupabaseService
     @EnvironmentObject private var notificationManager: NotificationManager
+    @EnvironmentObject private var searchEngine: BingeSearchEngine
     @ObservedObject var engine: BingeYouEngine
     @Binding var tab: BingeTab
     @State private var section = 0
@@ -348,7 +366,12 @@ struct BingeYouView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) { BingeTabBar(selection: $tab) }
             .sheet(isPresented: $showSettings) { BingeSettingsView() }
             .sheet(isPresented: $showImport) {
-                ImportManagementView(onComplete: { Task { await engine.load() } })
+                ImportManagementView(onComplete: {
+                    Task {
+                        await engine.load()
+                        await searchEngine.refreshLibraryState()
+                    }
+                })
             }
             .sheet(isPresented: $showFilters) { filterSheet }
             // Sort options differ per section, so an index doesn't survive the
