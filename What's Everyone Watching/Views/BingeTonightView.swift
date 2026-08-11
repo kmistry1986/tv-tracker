@@ -139,11 +139,8 @@ final class TonightEngine: ObservableObject {
         defer { isLoading = false }
 
         do {
-            print("🌙 Tonight: Starting load for user \(userId)")
-            
             // Load friends (with graceful failure for empty users)
             friends = (try? await supabase.fetchFriends(userId: userId)) ?? []
-            print("🌙 Tonight: Loaded \(friends.count) friends")
 
             // Load watchlist
             let watchlistItems = (try? await supabase.fetchWatchlistShows(userId: userId)) ?? []
@@ -233,7 +230,6 @@ final class TonightEngine: ObservableObject {
     /// No social signal. Recommend from the user's OWN highest-rated show —
     /// a real signal — and fall back to trending only if they've rated nothing.
     private func loadFromOwnTaste(mine: [UserShow], excluding seen: Set<Int>) async throws {
-        print("🌙 Tonight: loadFromOwnTaste starting with \(mine.count) shows")
         let best = mine
             .filter { ($0.rating ?? 0) >= 4 }
             .sorted { ($0.rating ?? 0) > ($1.rating ?? 0) }
@@ -255,11 +251,8 @@ final class TonightEngine: ObservableObject {
                                      isFallback: true, seedTitle: seed.title))
         }
 
-        print("🌙 Tonight: Fetching trending...")
         let trending = try await TMDBService.shared.getTrendingTV()
-        print("🌙 Tonight: Got \(trending.count) trending TV shows")
         let trendingMovies = try await TMDBService.shared.getTrendingMovies()
-        print("🌙 Tonight: Got \(trendingMovies.count) trending movies")
 
         var tvIndex = 0, movieIndex = 0
         while picks.count < 15 {
@@ -324,7 +317,6 @@ final class TonightEngine: ObservableObject {
 struct BingeTonightView: View {
     @StateObject private var engine = TonightEngine()
     @Binding var tab: BingeTab
-    @State private var middleHeight: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -389,212 +381,154 @@ struct BingeTonightView: View {
 
     private func content(_ pick: TonightPick) -> some View {
         VStack(spacing: 0) {
+            // THE POSTER. Whole, uncropped, 2:3, and given every pixel the rest
+            // of the screen doesn't strictly need.
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 0) {
                         ForEach(engine.picks.indices, id: \.self) { index in
-                            GeometryReader { geo in
-                                NavigationLink {
-                                    let pick = engine.picks[index]
-                                    if pick.isMovie {
-                                        BingeMovieDetailView(tmdbId: pick.show.tmdbId,
-                                                             dbMovieId: pick.show.id,
-                                                             title: pick.show.title)
-                                    } else {
-                                        BingeShowDetailView(tmdbId: pick.show.tmdbId,
-                                                            dbShowId: pick.show.id,
-                                                            title: pick.show.title)
-                                    }
-                                } label: {
-                                    Color.clear
-                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                        .background(
-                                            BingePoster(urlString: engine.picks[index].show.posterUrl, width: nil, height: nil, cropAnchor: .top)
-                                        )
-                                        .overlay(
-                                            LinearGradient(colors: [BingeTheme.ink.opacity(0.94), BingeTheme.ink.opacity(0)],
-                                                           startPoint: .bottom, endPoint: .top)
-                                        )
-                                        .overlay(alignment: .bottomLeading) {
-                                            VStack(alignment: .leading, spacing: 8) {
-                                                Text(engine.picks[index].show.title.isEmpty ? "Untitled" : engine.picks[index].show.title.uppercased())
-                                                    .bingeDisplay(39)
-                                                    .foregroundStyle(BingeTheme.ground)
-                                                    .lineLimit(3)
-                                                    .minimumScaleFactor(0.55)
-                                                    .fixedSize(horizontal: false, vertical: true)
-                                                Text(metaLine(engine.picks[index])).bingeLabel(10).foregroundStyle(BingeTheme.inkFaint)
-                                            }
-                                            .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 15)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                        }
-                                        .clipped()
-                                }
-                                .buttonStyle(.plain)
-                                .onGeometryChange(for: Bool.self) { geometry in
-                                    let frame = geometry.frame(in: .global)
-                                    let isVisible = frame.minX >= 0 && frame.maxX <= UIScreen.main.bounds.width
-                                    return isVisible
-                                } action: { isVisible in
-                                    if isVisible {
-                                        engine.visibleIndex = index
-                                    }
-                                }
-                            }
-                            .containerRelativeFrame(.horizontal)
-                            .id(index)
-                        }
-                        if !engine.picks.isEmpty {
-                            GeometryReader { geo in
-                                NavigationLink {
-                                    let pick = engine.picks[0]
-                                    if pick.isMovie {
-                                        BingeMovieDetailView(tmdbId: pick.show.tmdbId,
-                                                             dbMovieId: pick.show.id,
-                                                             title: pick.show.title)
-                                    } else {
-                                        BingeShowDetailView(tmdbId: pick.show.tmdbId,
-                                                            dbShowId: pick.show.id,
-                                                            title: pick.show.title)
-                                    }
-                                } label: {
-                                    Color.clear
-                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                        .background(
-                                            BingePoster(urlString: engine.picks[0].show.posterUrl, width: nil, height: nil, cropAnchor: .top)
-                                        )
-                                        .overlay(
-                                            LinearGradient(colors: [BingeTheme.ink.opacity(0.94), BingeTheme.ink.opacity(0)],
-                                                           startPoint: .bottom, endPoint: .top)
-                                        )
-                                        .overlay(alignment: .bottomLeading) {
-                                            VStack(alignment: .leading, spacing: 8) {
-                                                Text(engine.picks[0].show.title.isEmpty ? "Untitled" : engine.picks[0].show.title.uppercased())
-                                                    .bingeDisplay(39)
-                                                    .foregroundStyle(BingeTheme.ground)
-                                                    .lineLimit(3)
-                                                    .minimumScaleFactor(0.55)
-                                                    .fixedSize(horizontal: false, vertical: true)
-                                                Text(metaLine(engine.picks[0])).bingeLabel(10).foregroundStyle(BingeTheme.inkFaint)
-                                            }
-                                            .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 15)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                        }
-                                }
-                                .buttonStyle(.plain)
-                                .clipped()
-                                .onGeometryChange(for: Bool.self) { geometry in
-                                    let frame = geometry.frame(in: .global)
-                                    let isVisible = frame.minX >= 0 && frame.maxX <= UIScreen.main.bounds.width
-                                    return isVisible
-                                } action: { isVisible in
-                                    if isVisible {
-                                        engine.visibleIndex = 0
-                                    }
-                                }
-                            }
-                            .containerRelativeFrame(.horizontal)
-                            .id(engine.picks.count)
+                            posterPage(index)
                         }
                     }
                 }
                 .scrollTargetBehavior(.paging)
-                .onChange(of: engine.currentIndex) { oldValue, newValue in
+                .onChange(of: engine.currentIndex) { _, newValue in
                     withAnimation(.easeInOut(duration: 0.3)) {
                         proxy.scrollTo(newValue, anchor: .center)
                     }
                 }
             }
-            .frame(minHeight: 150, maxHeight: .infinity)
-            .layoutPriority(0)
-
-            ScrollView {
-                VStack(spacing: 0) {
-                    BingeSourceBand(kicker: engine.sourceCopy.kicker,
-                                    statement: engine.sourceCopy.statement)
-
-                    BingeRule(onDark: true)
-                }
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { middleHeight = $0 }
-            }
-            .frame(maxHeight: middleHeight == 0 ? nil : middleHeight)
-            .scrollBounceBehavior(.basedOnSize)
+            .frame(minHeight: 180, maxHeight: .infinity)
             .layoutPriority(1)
 
-            VStack(spacing: 9) {
-                if let visiblePick = engine.visiblePick {
-                    HStack(spacing: 9) {
-                        NavigationLink {
-                            if visiblePick.isMovie {
-                                BingeMovieDetailView(tmdbId: visiblePick.show.tmdbId,
-                                                     dbMovieId: visiblePick.show.id,
-                                                     title: visiblePick.show.title)
-                            } else {
-                                BingeShowDetailView(tmdbId: visiblePick.show.tmdbId,
-                                                    dbShowId: visiblePick.show.id,
-                                                    title: visiblePick.show.title)
-                            }
-                        } label: {
-                            Text("Open \(visiblePick.show.title)").bingeLabel(10)
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity, minHeight: BingeTheme.minTap, alignment: .leading)
-                                .padding(.horizontal, 12)
-                                .foregroundStyle(BingeTheme.accentTint)
-                                .overlay(Rectangle().stroke(BingeTheme.accentTint, lineWidth: 1))
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
+            BingeRule(onDark: true)
 
-                        if engine.isOnWatchlist {
-                            BingeOutlineButton(title: "On Watchlist", onDark: true, labelSize: 10) {
-                                Task { await engine.saveCurrent() }
-                            }
-                        } else {
-                            BingeOutlineButton(title: "Save it", onDark: true, labelSize: 10) {
-                                Task { await engine.saveCurrent() }
+            BingeSourceBand(kicker: engine.sourceCopy.kicker,
+                            statement: engine.sourceCopy.statement)
+
+            BingeRule(onDark: true)
+
+            actionRow
+        }
+    }
+
+    /// One full-bleed page of the carousel: the poster at its true 2:3, centred,
+    /// nothing painted over it.
+    private func posterPage(_ index: Int) -> some View {
+        let pick = engine.picks[index]
+        return NavigationLink {
+            if pick.isMovie {
+                BingeMovieDetailView(tmdbId: pick.show.tmdbId,
+                                     dbMovieId: pick.show.id,
+                                     title: pick.show.title)
+            } else {
+                BingeShowDetailView(tmdbId: pick.show.tmdbId,
+                                    dbShowId: pick.show.id,
+                                    title: pick.show.title)
+            }
+        } label: {
+            Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(BingePoster(urlString: pick.show.posterUrl,
+                                        width: nil, height: nil, cropAnchor: .top))
+                .overlay(
+                    LinearGradient(colors: [BingeTheme.ink.opacity(0.94), BingeTheme.ink.opacity(0)],
+                                   startPoint: .bottom, endPoint: .top)
+                )
+                .overlay(alignment: .bottomLeading) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(pick.show.title.isEmpty ? "UNTITLED" : pick.show.title.uppercased())
+                            .bingeDisplay(39)
+                            .foregroundStyle(BingeTheme.ground)
+                            .lineLimit(3)
+                            .minimumScaleFactor(0.55)
+                            .fixedSize(horizontal: false, vertical: true)
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(metaLine(pick)).bingeLabel(10)
+                                .foregroundStyle(BingeTheme.inkFaint)
+                                .lineLimit(1).minimumScaleFactor(0.75)
+                            Spacer(minLength: 8)
+                            if engine.picks.count > 1 {
+                                Text("\(index + 1) / \(engine.picks.count)")
+                                    .bingeLabel(10).monospacedDigit()
+                                    .foregroundStyle(BingeTheme.onDarkMuted)
                             }
                         }
                     }
+                    .padding(.horizontal, BingeTheme.gutter).padding(.bottom, 15)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .clipped()
+        }
+        .buttonStyle(.plain)
+        .containerRelativeFrame(.horizontal)
+        .id(index)
+        .onGeometryChange(for: Bool.self) { geometry in
+            let frame = geometry.frame(in: .global)
+            return frame.minX >= 0 && frame.maxX <= UIScreen.main.bounds.width
+        } action: { isVisible in
+            if isVisible { engine.visibleIndex = index }
+        }
+    }
+
+    private var actionRow: some View {
+        VStack(spacing: 9) {
+            if let visiblePick = engine.visiblePick ?? engine.pick {
+                HStack(spacing: 9) {
+                    NavigationLink {
+                        if visiblePick.isMovie {
+                            BingeMovieDetailView(tmdbId: visiblePick.show.tmdbId,
+                                                 dbMovieId: visiblePick.show.id,
+                                                 title: visiblePick.show.title)
+                        } else {
+                            BingeShowDetailView(tmdbId: visiblePick.show.tmdbId,
+                                                dbShowId: visiblePick.show.id,
+                                                title: visiblePick.show.title)
+                        }
+                    } label: {
+                        Text("Open \(visiblePick.show.title)").bingeLabel(10)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, minHeight: BingeTheme.minTap, alignment: .leading)
+                            .padding(.horizontal, 12)
+                            .foregroundStyle(BingeTheme.accentTint)
+                            .overlay(Rectangle().stroke(BingeTheme.accentTint, lineWidth: 1))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    BingeOutlineButton(title: engine.isOnWatchlist ? "On Watchlist" : "Save it",
+                                       onDark: true, labelSize: 10) {
+                        Task { await engine.saveCurrent() }
+                    }
                 }
             }
-            .padding(.horizontal, BingeTheme.gutter)
-            .padding(.vertical, 12)
-            .fixedSize(horizontal: false, vertical: true)
-            .layoutPriority(1)
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 12)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func metaLine(_ pick: TonightPick) -> String {
         var parts: [String] = []
 
         if let airDate = pick.show.firstAirDate, airDate.count >= 4 {
-            let year = String(airDate.prefix(4))
-            parts.append(year)
+            parts.append(String(airDate.prefix(4)))
         }
 
         parts.append(pick.isMovie ? "Movie" : "Series")
 
         if pick.isMovie {
             if let runtime = pick.show.runtime, runtime > 0 {
-                let hours = runtime / 60
-                let minutes = runtime % 60
-                if hours > 0 && minutes > 0 {
-                    parts.append("\(hours)h \(minutes)m")
-                } else if hours > 0 {
-                    parts.append("\(hours)h")
-                } else {
-                    parts.append("\(minutes)m")
-                }
+                let hours = runtime / 60, minutes = runtime % 60
+                if hours > 0 && minutes > 0 { parts.append("\(hours)h \(minutes)m") }
+                else if hours > 0 { parts.append("\(hours)h") }
+                else { parts.append("\(minutes)m") }
             }
-        } else {
-            if pick.show.numberOfEpisodes > 0 {
-                parts.append("\(pick.show.numberOfEpisodes) episode\(pick.show.numberOfEpisodes == 1 ? "" : "s")")
-            }
+        } else if pick.show.numberOfEpisodes > 0 {
+            parts.append("\(pick.show.numberOfEpisodes) episode\(pick.show.numberOfEpisodes == 1 ? "" : "s")")
         }
 
-        if let s = pick.service, !s.isEmpty {
-            parts.append(s)
-        }
+        if let s = pick.service, !s.isEmpty { parts.append(s) }
 
         return parts.joined(separator: " · ")
     }
