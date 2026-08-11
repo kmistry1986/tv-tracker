@@ -204,8 +204,8 @@ struct LibraryView: View {
                     loadLibrary()
                 }
             }
-            .onChange(of: importTrigger?.wrappedValue ?? false) { _, newValue in
-                if !newValue {
+            .task(id: importTrigger?.wrappedValue) {
+                if importTrigger?.wrappedValue == false {
                     loadLibrary()
                 }
             }
