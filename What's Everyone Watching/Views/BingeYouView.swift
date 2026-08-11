@@ -123,6 +123,9 @@ final class BingeYouEngine: ObservableObject {
     @Published var joined: String?
     @Published var isLoading = false
 
+    private var cachedLibrary: [BingeLibraryItem] = []
+    private var cachedWatchlist: [BingeLibraryItem] = []
+
     private let supabase = SupabaseService.shared
 
     var watching: [BingeLibraryItem] { library.filter { $0.isWatching } }
@@ -141,9 +144,13 @@ final class BingeYouEngine: ObservableObject {
         }
     }
 
+    @MainActor
     func load() async {
         guard let userId = supabase.currentUser?.id else { return }
-        isLoading = true
+        // Only show loading state if we don't have cached data
+        if library.isEmpty {
+            isLoading = true
+        }
         defer { isLoading = false }
 
         // Watched episodes, grouped by show — the source of progress.
@@ -204,7 +211,9 @@ final class BingeYouEngine: ObservableObject {
             }
         }
 
-        library = built.sorted { $0.progress > $1.progress }
+        let sortedLib = built.sorted { $0.progress > $1.progress }
+        library = sortedLib
+        cachedLibrary = sortedLib
         print("📺 Library has \(library.count) items")
 
         let list = (try? await supabase.fetchWatchlistShows(userId: userId)) ?? []
@@ -216,6 +225,7 @@ final class BingeYouEngine: ObservableObject {
                                        watchedDate: row.addedAt, isWatchlist: true))
         }
         watchlist = wl
+        cachedWatchlist = wl
 
         friendCount = ((try? await supabase.fetchFriends(userId: userId)) ?? []).count
 
@@ -429,11 +439,11 @@ struct BingeYouView: View {
 
     private var statSwitch: some View {
         HStack(spacing: 0) {
-            statCell(engine.isLoading ? "-" : "\(engine.watching.count)", "You started", index: 0)
+            statCell("\(engine.watching.count)", "You started", index: 0)
             BingeVRule()
-            statCell(engine.isLoading ? "-" : "\(engine.watchlist.count)", "Saved", index: 1)
+            statCell("\(engine.watchlist.count)", "Saved", index: 1)
             BingeVRule()
-            statCell(engine.isLoading ? "-" : "\(engine.finished.count)", "Finished", index: 2)
+            statCell("\(engine.finished.count)", "Finished", index: 2)
             BingeVRule(onDark: section == 2)
 
             // Trailing controls live inside the switch — the page already has one
