@@ -801,7 +801,11 @@ struct ImportManagementView: View {
 
         currentShow = ""
         if !newIssues.isEmpty {
-            try? await supabase.insertImportIssues(userId: userId, issues: newIssues)
+            do {
+                try await supabase.insertImportIssues(userId: userId, issues: newIssues)
+            } catch {
+                print("❌ Failed to save import issues: \(error)")
+            }
         }
         await loadIssues()
         phase = .result
