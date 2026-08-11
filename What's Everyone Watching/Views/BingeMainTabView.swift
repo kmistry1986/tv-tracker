@@ -15,6 +15,7 @@ struct BingeMainTabView: View {
     @StateObject private var youEngine = BingeYouEngine()
     @StateObject private var notificationManager = NotificationManager()
     @State private var tab: BingeTab = .tonight
+    @State private var showImport = false
     /// Carried WITH the presentation. A plain @State array read by a
     /// .sheet(isPresented:) closure can be captured while it's still empty,
     /// which is what rendered "Rate these" over nothing.
@@ -30,7 +31,7 @@ struct BingeMainTabView: View {
             case .search:
                 NavigationStack { BingeSearchView(engine: searchEngine, tab: $tab) }
             case .you:
-                NavigationStack { BingeYouView(engine: youEngine, tab: $tab) }
+                NavigationStack { BingeYouTab(tab: $tab, showImport: $showImport) }
             }
         }
         .environmentObject(supabase)
@@ -179,9 +180,9 @@ struct BingeFriendsTab: View {
 struct BingeYouTab: View {
     @EnvironmentObject private var supabase: SupabaseService
     @Binding var tab: BingeTab
+    @Binding var showImport: Bool
     @State private var section = 0
     @State private var showSettings = false
-    @State private var showImport = false
 
     var body: some View {
         VStack(spacing: 0) {
