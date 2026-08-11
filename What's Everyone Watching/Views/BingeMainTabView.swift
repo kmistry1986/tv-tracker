@@ -211,7 +211,7 @@ struct BingeYouTab: View {
             BingeRule(strong: true)
 
             Group {
-                if section == 0 { LibraryView() } else { WatchlistView() }
+                if section == 0 { LibraryView(importTrigger: $showImport) } else { WatchlistView() }
             }
             .toolbar(.hidden, for: .navigationBar)
 
