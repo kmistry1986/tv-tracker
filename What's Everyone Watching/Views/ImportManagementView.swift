@@ -853,8 +853,8 @@ struct ImportManagementView: View {
                         let seasonMatches = csvEntry.seasonNumber == nil
                             || csvEntry.seasonNumber == episodeDetail.seasonNumber
                         if seasonMatches {
-                            let a = episodeDetail.name.lowercased()
-                            let b = episodeTitle.lowercased()
+                            let a = normalizeEpisodeTitle(episodeDetail.name)
+                            let b = normalizeEpisodeTitle(episodeTitle)
                             isWatched = a.contains(b) || b.contains(a)
                         }
                     }
@@ -1080,13 +1080,43 @@ struct ImportManagementView: View {
                 guard let seasonDetail = try? await tmdb.getTVSeason(showId: show.id, seasonNumber: season)
                 else { continue }
                 for episode in seasonDetail.episodes {
-                    let a = episode.name.lowercased()
-                    let b = episodeTitle.lowercased()
+                    let a = normalizeEpisodeTitle(episode.name)
+                    let b = normalizeEpisodeTitle(episodeTitle)
                     if a.contains(b) || b.contains(a) { return show }
                 }
             }
         }
         return nil
+    }
+
+    private func normalizeEpisodeTitle(_ title: String) -> String {
+        var result = title.lowercased()
+        // Normalize hyphens to spaces for compound numbers
+        result = result.replacingOccurrences(of: "-", with: " ")
+
+        let numberWords = [
+            "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
+            "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9",
+            "ten": "10", "eleven": "11", "twelve": "12", "thirteen": "13",
+            "fourteen": "14", "fifteen": "15", "sixteen": "16", "seventeen": "17",
+            "eighteen": "18", "nineteen": "19", "twenty": "20", "thirty": "30",
+            "forty": "40", "fifty": "50", "sixty": "60", "seventy": "70",
+            "eighty": "80", "ninety": "90"
+        ]
+
+        // Replace compound numbers: "twenty five" → "25"
+        result = result.replacingOccurrences(of: "twenty five", with: "25")
+        result = result.replacingOccurrences(of: "twenty six", with: "26")
+        result = result.replacingOccurrences(of: "twenty seven", with: "27")
+        result = result.replacingOccurrences(of: "twenty eight", with: "28")
+        result = result.replacingOccurrences(of: "twenty nine", with: "29")
+
+        // Replace standalone written numbers
+        for (written, digit) in numberWords {
+            result = result.replacingOccurrences(of: written, with: digit)
+        }
+
+        return result
     }
 
     private func extractEpisodeTitle(from title: String) -> String? {
