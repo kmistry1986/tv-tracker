@@ -69,8 +69,54 @@ final class BingeSearchEngine: ObservableObject {
 
     func refreshLibraryState() async {
         guard let userId = supabase.currentUser?.id else { return }
-        lastPrimeTime = Date.distantPast
-        await primeContext()
+
+        // Fetch everything fresh, no caching
+        if let mine = try? await supabase.fetchUserShows(userId: userId) {
+            libraryShows = Set(mine.map(\.showId))
+            finishedShows = Set(mine.filter { ($0.rating ?? 0) > 0 }.map(\.showId))
+            var ratings: [Int: Int] = [:]
+            for show in mine {
+                if let rating = show.rating, rating > 0 {
+                    ratings[show.showId] = rating
+                }
+            }
+            showRatings = ratings
+        }
+
+        let episodes = (try? await supabase.fetchUserEpisodes(userId: userId)) ?? []
+        var episodeCounts: [Int: (watched: Int, total: Int)] = [:]
+
+        for ep in episodes {
+            var counts = episodeCounts[ep.showId] ?? (0, 0)
+            counts.total += 1
+            if ep.watched {
+                counts.watched += 1
+            }
+            episodeCounts[ep.showId] = counts
+        }
+
+        // Get actual total episode counts from show metadata
+        await withTaskGroup(of: (showId: Int, total: Int)?.self) { group in
+            for showId in episodeCounts.keys {
+                group.addTask {
+                    if let show = try? await self.supabase.fetchShowById(id: showId) {
+                        return (showId: showId, total: show.numberOfEpisodes)
+                    }
+                    return nil
+                }
+            }
+            for await result in group {
+                if let (showId, total) = result {
+                    var counts = episodeCounts[showId] ?? (0, 0)
+                    counts.total = total
+                    episodeCounts[showId] = counts
+                }
+            }
+        }
+
+        showEpisodeCounts = episodeCounts
+        lastPrimeTime = Date()
+        objectWillChange.send()
     }
 
     /// Everything the rows need to describe themselves. Loaded once when the tab opens.
