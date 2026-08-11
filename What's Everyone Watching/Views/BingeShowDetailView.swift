@@ -591,6 +591,7 @@ struct BingeShowDetailView: View {
 
         let episodes = episodesBySeason[season] ?? []
         let wasEmpty = watchedTmdbIds.isEmpty
+        let detailsTitle = details?.name
 
         // Update UI first
         for ep in episodes {
@@ -607,7 +608,7 @@ struct BingeShowDetailView: View {
                                             name: ep.name, overview: ep.overview ?? "",
                                             airDate: ep.airDate, userId: userId,
                                             watched: true, watchedAt: ISO8601DateFormatter().string(from: Date()),
-                                            showTitle: details?.name)
+                                            showTitle: detailsTitle)
                         try? await supabase.insertEpisode(episode: episode)
                     } else {
                         try? await supabase.deleteEpisodeByCompositeKey(
@@ -631,17 +632,20 @@ struct BingeShowDetailView: View {
     /// based on whether anything is ticked. Safe to call after any bulk change.
     private func syncLibraryMembership(wasEmpty: Bool, userId: String) async {
         let hasWatched = !watchedTmdbIds.isEmpty
+        let currentDetails = details
+        let currentRating = rating
+        let currentWatchedCount = watchedCount
 
         if hasWatched && wasEmpty {
             // Optimistically update library before database operations complete
-            if let details = details {
+            if let details = currentDetails {
                 let show = TVShow(id: dbShowId ?? tmdbId, tmdbId: tmdbId, title: details.name,
                                 overview: details.overview, posterUrl: details.imageUrl,
                                 firstAirDate: details.firstAirDate, numberOfSeasons: details.numberOfSeasons,
                                 numberOfEpisodes: details.numberOfEpisodes, platforms: nil, runtime: nil)
-                let item = BingeLibraryItem(id: dbShowId ?? tmdbId, show: show, rating: rating,
+                let item = BingeLibraryItem(id: dbShowId ?? tmdbId, show: show, rating: currentRating,
                                           watchedDate: ISO8601DateFormatter().string(from: Date()),
-                                          isWatchlist: false, watchedEpisodes: watchedCount,
+                                          isWatchlist: false, watchedEpisodes: currentWatchedCount,
                                           lastSeason: nil, lastEpisode: nil)
                 youEngine.library.removeAll { $0.show.id == (dbShowId ?? tmdbId) }
                 youEngine.library.append(item)
