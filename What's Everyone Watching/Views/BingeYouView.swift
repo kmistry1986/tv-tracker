@@ -429,11 +429,11 @@ struct BingeYouView: View {
 
     private var statSwitch: some View {
         HStack(spacing: 0) {
-            statCell("\(engine.watching.count)", "You started", index: 0)
+            statCell(engine.isLoading ? "-" : "\(engine.watching.count)", "You started", index: 0)
             BingeVRule()
-            statCell("\(engine.watchlist.count)", "Saved", index: 1)
+            statCell(engine.isLoading ? "-" : "\(engine.watchlist.count)", "Saved", index: 1)
             BingeVRule()
-            statCell("\(engine.finished.count)", "Finished", index: 2)
+            statCell(engine.isLoading ? "-" : "\(engine.finished.count)", "Finished", index: 2)
             BingeVRule(onDark: section == 2)
 
             // Trailing controls live inside the switch — the page already has one
