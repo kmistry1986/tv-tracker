@@ -9,12 +9,14 @@
 /* Begin PBXBuildFile section */
 		552DC89F3023E326003AB9F6 /* StreamingPlatformSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 552DC89E3023E326003AB9F6 /* StreamingPlatformSelector.swift */; };
 		552DC8A13023E355003AB9F6 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 552DC8A03023E355003AB9F6 /* SettingsView.swift */; };
+		5539D5F1302A471400C44EF2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5539D5F2302A471500C44EF2 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		000000000000000000000120 /* What's Everyone Watching.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "What's Everyone Watching.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		552DC89E3023E326003AB9F6 /* StreamingPlatformSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingPlatformSelector.swift; sourceTree = "<group>"; };
 		552DC8A03023E355003AB9F6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		5539D5F2302A471500C44EF2 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -54,6 +56,7 @@
 				000000000000000000000020 /* Products */,
 				552DC89E3023E326003AB9F6 /* StreamingPlatformSelector.swift */,
 				552DC8A03023E355003AB9F6 /* SettingsView.swift */,
+				554B9ECC302AF64E00958D5F /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -63,6 +66,14 @@
 				000000000000000000000120 /* What's Everyone Watching.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		554B9ECC302AF64E00958D5F /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				5539D5F2302A471500C44EF2 /* Assets.xcassets */,
+			);
+			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -124,6 +135,7 @@
 		000000000000000140000000 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
+				5539D5F1302A471400C44EF2 /* Assets.xcassets in Resources */,
 			);
 		};
 /* End PBXResourcesBuildPhase section */

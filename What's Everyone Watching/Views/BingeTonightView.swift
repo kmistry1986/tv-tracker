@@ -514,24 +514,6 @@ struct BingeTonightView: View {
                                     statement: engine.sourceCopy.statement)
 
                     BingeRule(onDark: true)
-
-                    if engine.friends.count < 3 {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("This gets better fast").bingeLabel(9).foregroundStyle(BingeTheme.onDarkMuted)
-                            Text("Add three people you actually know and Tonight starts naming names.")
-                                .bingeBody(12).foregroundStyle(BingeTheme.inkFaint)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Button { tab = .friends } label: {
-                                Text("Find your people →").bingeLabel(10)
-                                    .foregroundStyle(BingeTheme.accentTint)
-                                    .padding(.vertical, 6).contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 12)
-                        BingeRule(onDark: true)
-                    }
                 }
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { middleHeight = $0 }
             }
@@ -541,30 +523,28 @@ struct BingeTonightView: View {
 
             VStack(spacing: 9) {
                 if let visiblePick = engine.visiblePick {
-                    NavigationLink {
-                        BingeShowDetailView(tmdbId: visiblePick.show.tmdbId,
-                                            dbShowId: visiblePick.show.id,
-                                            title: visiblePick.show.title)
-                    } label: {
-                        HStack {
-                            Text("Open \(visiblePick.show.title)").bingeHeadline(11).textCase(.uppercase)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.leading)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Spacer(minLength: 12)
-                            Text("→").bingeHeadline(11)
-                        }
-                        .padding(.horizontal, 14).padding(.vertical, 9)
-                        .frame(maxWidth: .infinity, minHeight: BingeTheme.minTap)
-                        .background(BingeTheme.ground)
-                        .foregroundStyle(BingeTheme.ink)
-                    }
-                    .buttonStyle(.plain)
-
                     HStack(spacing: 9) {
-                        BingeOutlineButton(title: "Not tonight", onDark: true, labelSize: 10) {
-                            Task { await engine.skipCurrent() }
+                        NavigationLink {
+                            if visiblePick.isMovie {
+                                BingeMovieDetailView(tmdbId: visiblePick.show.tmdbId,
+                                                     dbMovieId: visiblePick.show.id,
+                                                     title: visiblePick.show.title)
+                            } else {
+                                BingeShowDetailView(tmdbId: visiblePick.show.tmdbId,
+                                                    dbShowId: visiblePick.show.id,
+                                                    title: visiblePick.show.title)
+                            }
+                        } label: {
+                            Text("Open \(visiblePick.show.title)").bingeLabel(10)
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, minHeight: BingeTheme.minTap, alignment: .leading)
+                                .padding(.horizontal, 12)
+                                .foregroundStyle(BingeTheme.accentTint)
+                                .overlay(Rectangle().stroke(BingeTheme.accentTint, lineWidth: 1))
+                                .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+
                         if engine.isOnWatchlist {
                             BingeOutlineButton(title: "On Watchlist", onDark: true, labelSize: 10) {
                                 Task { await engine.saveCurrent() }
