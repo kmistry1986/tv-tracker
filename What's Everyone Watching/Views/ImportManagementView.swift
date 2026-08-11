@@ -56,7 +56,7 @@ struct ImportIssue: Codable, Identifiable, Hashable {
 }
 
 /// A run of episodes we'd mark watched, with the evidence for it.
-struct GapProposal: Identifiable, Hashable {
+struct GapProposal: Identifiable {
     let id = UUID()
     let tmdbShowId: Int
     let showName: String
@@ -65,6 +65,8 @@ struct GapProposal: Identifiable, Hashable {
     let unplacedCount: Int
     /// The date to record — taken from the unplaced rows it accounts for.
     let watchedDate: String
+    /// For gaps at season start: (season, episodeNumber) of last ep in previous season
+    let prevSeasonBoundary: (Int, Int)?
 
     var range: String {
         guard let first = episodes.first, let last = episodes.last else { return "" }
@@ -74,6 +76,10 @@ struct GapProposal: Identifiable, Hashable {
     var evidence: String {
         guard let first = episodes.first, let last = episodes.last else { return "" }
         let rows = unplacedCount == 1 ? "1 unplaced row" : "\(unplacedCount) unplaced rows"
+
+        if let (prevSeason, prevEp) = prevSeasonBoundary {
+            return "S\(prevSeason)E\(prevEp) and S\(season)E\(last + 1) are watched · \(rows) for S\(season)E\(first)–E\(last)"
+        }
         return "E\(first - 1) and E\(last + 1) are watched · \(rows) for S\(season)"
     }
 }
@@ -950,12 +956,20 @@ struct ImportManagementView: View {
                 let gap = firstWatched - 1
                 if gap > 0, gap <= Self.maxGap, gap <= budget {
                     budget -= gap
+                    // Reference last ep of previous season if available
+                    let prevBoundary: (Int, Int)? = {
+                        if season > 1, let prevWatched = watchedBySeason[season - 1]?.sorted().last {
+                            return (season - 1, prevWatched)
+                        }
+                        return nil
+                    }()
                     out.append(GapProposal(tmdbShowId: showId,
                                            showName: showName,
                                            season: season,
                                            episodes: Array(1...(firstWatched - 1)),
                                            unplacedCount: gap,
-                                           watchedDate: date))
+                                           watchedDate: date,
+                                           prevSeasonBoundary: prevBoundary))
                 }
             }
 
@@ -970,7 +984,8 @@ struct ImportManagementView: View {
                                        season: season,
                                        episodes: Array((low + 1)...(high - 1)),
                                        unplacedCount: gap,
-                                       watchedDate: date))
+                                       watchedDate: date,
+                                       prevSeasonBoundary: nil))
             }
         }
 
