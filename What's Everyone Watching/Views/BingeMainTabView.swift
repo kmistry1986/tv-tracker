@@ -15,7 +15,6 @@ struct BingeMainTabView: View {
     @StateObject private var youEngine = BingeYouEngine()
     @StateObject private var notificationManager = NotificationManager()
     @State private var tab: BingeTab = .tonight
-    @State private var showImport = false
     /// Carried WITH the presentation. A plain @State array read by a
     /// .sheet(isPresented:) closure can be captured while it's still empty,
     /// which is what rendered "Rate these" over nothing.
@@ -31,7 +30,7 @@ struct BingeMainTabView: View {
             case .search:
                 NavigationStack { BingeSearchView(engine: searchEngine, tab: $tab) }
             case .you:
-                NavigationStack { BingeYouTab(tab: $tab, showImport: $showImport) }
+                NavigationStack { BingeYouView(engine: youEngine, tab: $tab) }
             }
         }
         .environmentObject(supabase)
@@ -174,72 +173,6 @@ struct BingeFriendsTab: View {
     }
 }
 
-// MARK: - You tab
-// Library + Watchlist + Import + Profile, folded into one screen.
-
-struct BingeYouTab: View {
-    @EnvironmentObject private var supabase: SupabaseService
-    @Binding var tab: BingeTab
-    @Binding var showImport: Bool
-    @State private var section = 0
-    @State private var showSettings = false
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                HStack(spacing: 12) {
-                    Text(initials).bingeHeadline(14)
-                        .frame(width: 44, height: 44)
-                        .background(BingeTheme.ink).foregroundStyle(BingeTheme.ground)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(supabase.currentUser?.name ?? "You").bingeHeadline(18)
-                        Text(supabase.currentUser?.email ?? "")
-                            .bingeBody(12).foregroundStyle(BingeTheme.inkMuted)
-                    }
-                }
-                Spacer()
-                Button { showSettings = true } label: {
-                    Text("Settings").bingeLabel(11).foregroundStyle(BingeTheme.inkMuted)
-                        .padding(.vertical, 10).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, BingeTheme.gutter).padding(.top, 8).padding(.bottom, 14)
-            BingeRule(strong: true)
-
-            BingeSegmented(options: ["Library", "Watchlist"], selection: $section)
-                .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 12)
-            BingeRule(strong: true)
-
-            Group {
-                if section == 0 { LibraryView(importTrigger: $showImport) } else { WatchlistView() }
-            }
-            .toolbar(.hidden, for: .navigationBar)
-
-            BingeRule(strong: true)
-            HStack(spacing: 8) {
-                BingeChip(title: "Import") { showImport = true }
-                BingeChip(title: "Platforms", muted: true) { showSettings = true }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 10)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(BingeTheme.ground)
-        .foregroundStyle(BingeTheme.ink)
-        .toolbar(.hidden, for: .navigationBar)
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .safeAreaInset(edge: .bottom, spacing: 0) { BingeTabBar(selection: $tab) }
-        .sheet(isPresented: $showSettings) { BingeSettingsView() }
-        .sheet(isPresented: $showImport) { ImportManagementView() }
-    }
-
-    private var initials: String {
-        let name = supabase.currentUser?.name ?? "You"
-        let parts = name.split(separator: " ").prefix(2)
-        return parts.map { String($0.prefix(1)).uppercased() }.joined()
-    }
-}
 
 // MARK: - Daily Rating Prompt
 

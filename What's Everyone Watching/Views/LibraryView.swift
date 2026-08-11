@@ -21,7 +21,6 @@ struct LibraryView: View {
     @State private var selectedShowForRating: (showId: Int, title: String, isMovie: Bool)?
     @State private var itemToRemove: (id: Int, title: String, isMovie: Bool)?
     @Environment(\.scenePhase) var scenePhase
-    var importTrigger: Binding<Bool>? = nil
     
     var filteredShows: [LibraryShowWithDetails] {
         if searchText.isEmpty {
@@ -201,11 +200,6 @@ struct LibraryView: View {
             }
             .onChange(of: scenePhase) {
                 if scenePhase == .active {
-                    loadLibrary()
-                }
-            }
-            .task(id: importTrigger?.wrappedValue) {
-                if importTrigger?.wrappedValue == false {
                     loadLibrary()
                 }
             }
