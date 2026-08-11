@@ -337,7 +337,9 @@ struct BingeYouView: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .bottom, spacing: 0) { BingeTabBar(selection: $tab) }
             .sheet(isPresented: $showSettings) { BingeSettingsView() }
-            .sheet(isPresented: $showImport) { ImportManagementView() }
+            .sheet(isPresented: $showImport) {
+                ImportManagementView(onComplete: { Task { await engine.load() } })
+            }
             .sheet(isPresented: $showFilters) { filterSheet }
             // Sort options differ per section, so an index doesn't survive the
             // switch; filters are properties of the title and do.
@@ -802,6 +804,9 @@ struct BingeYouView: View {
                     }
                 }
             }
+        }
+        .refreshable {
+            await engine.load()
         }
     }
 

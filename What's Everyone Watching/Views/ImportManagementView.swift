@@ -108,6 +108,7 @@ struct ImportManagementView: View {
     /// Optional: lets a "not found" row hand the title to the Search tab. With
     /// no handler the title goes to the clipboard instead — useful, never broken.
     var onSearch: ((String) -> Void)? = nil
+    var onComplete: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @StateObject private var supabase = SupabaseService.shared
@@ -469,7 +470,10 @@ struct ImportManagementView: View {
                 } else if notFound > 0 || unplaced > 0 {
                     primaryButton("See the \(notFound + unplaced) issues") { phase = .log }
                 }
-                Button { dismiss() } label: {
+                Button {
+                    onComplete?()
+                    dismiss()
+                } label: {
                     Text("Done").bingeLabel(14).foregroundStyle(BingeTheme.inkMuted)
                         .padding(.vertical, 4).contentShape(Rectangle())
                 }
