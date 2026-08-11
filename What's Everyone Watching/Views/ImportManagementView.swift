@@ -1104,12 +1104,17 @@ struct ImportManagementView: View {
             "eighty": "80", "ninety": "90"
         ]
 
-        // Replace compound numbers: "twenty five" → "25"
-        result = result.replacingOccurrences(of: "twenty five", with: "25")
-        result = result.replacingOccurrences(of: "twenty six", with: "26")
-        result = result.replacingOccurrences(of: "twenty seven", with: "27")
-        result = result.replacingOccurrences(of: "twenty eight", with: "28")
-        result = result.replacingOccurrences(of: "twenty nine", with: "29")
+        // Replace compound numbers: "twenty five" → "25", "thirty two" → "32", etc.
+        let tens = ["twenty": "2", "thirty": "3", "forty": "4", "fifty": "5",
+                    "sixty": "6", "seventy": "7", "eighty": "8", "ninety": "9"]
+        let ones = ["one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
+                    "six": "6", "seven": "7", "eight": "8", "nine": "9"]
+
+        for (tenWord, tenDigit) in tens {
+            for (oneWord, oneDigit) in ones {
+                result = result.replacingOccurrences(of: "\(tenWord) \(oneWord)", with: "\(tenDigit)\(oneDigit)")
+            }
+        }
 
         // Replace standalone written numbers
         for (written, digit) in numberWords {
