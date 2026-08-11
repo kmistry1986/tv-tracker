@@ -460,8 +460,12 @@ struct ImportManagementView: View {
                               accent: true)
                 }
                 if unplaced > 0 {
-                    didntLand("\(unplaced)", "Episodes we couldn't place",
-                              "Show matched, but Netflix's episode name didn't. The show is in your library.")
+                    let gapFillableCount = proposals.reduce(0) { $0 + $1.episodes.count }
+                    let unplacedNotInGaps = unplaced - gapFillableCount
+                    if unplacedNotInGaps > 0 {
+                        didntLand("\(unplacedNotInGaps)", "Episodes we couldn't place",
+                                  "Show matched, but Netflix's episode name didn't. The show is in your library.")
+                    }
                 }
             }
 
@@ -883,14 +887,25 @@ struct ImportManagementView: View {
         }
 
         let leftovers = group.entries.filter { !matchedTitles.contains($0.title) }
-        unplaced += leftovers.count
 
-        proposals.append(contentsOf: proposeGapFills(showId: show.id,
-                                                    showName: group.showName,
-                                                    watchedBySeason: watchedBySeason,
-                                                    leftovers: leftovers))
+        let newProposals = proposeGapFills(showId: show.id,
+                                          showName: group.showName,
+                                          watchedBySeason: watchedBySeason,
+                                          leftovers: leftovers)
+        proposals.append(contentsOf: newProposals)
 
-        return leftovers.map {
+        let gapFillableTitles = Set(newProposals.flatMap { proposal in
+            leftovers.filter { entry in
+                let seasonMatches = entry.seasonNumber == nil || entry.seasonNumber == proposal.season
+                let episodeMatches = entry.episodeNumber == nil || proposal.episodes.contains(entry.episodeNumber ?? 0)
+                return seasonMatches && episodeMatches
+            }.map { $0.title }
+        })
+
+        let unloggedLeftovers = leftovers.filter { !gapFillableTitles.contains($0.title) }
+        unplaced += unloggedLeftovers.count
+
+        return unloggedLeftovers.map {
             ImportIssue(id: nil, kind: .unplaced, title: $0.title,
                         showName: group.showName, source: "netflix", createdAt: nil)
         }
