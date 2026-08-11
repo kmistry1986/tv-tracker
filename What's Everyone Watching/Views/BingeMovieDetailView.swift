@@ -30,6 +30,7 @@ struct BingeMovieDetailView: View {
     @State private var isWorking = false
     @State private var showAbout = false
     @State private var showRatingSheet = false
+    @State private var justFinished = false
     @EnvironmentObject private var notificationManager: NotificationManager
     @EnvironmentObject private var youEngine: BingeYouEngine
 
@@ -74,6 +75,12 @@ struct BingeMovieDetailView: View {
                              existingReview: review) { newRating, newReview in
                 rating = newRating
                 review = newReview
+            }
+        }
+        .onChange(of: showRatingSheet) { _, newValue in
+            // After rating sheet closes and we just finished the movie, dismiss back to previous screen
+            if !newValue && justFinished {
+                dismiss()
             }
         }
     }
@@ -264,6 +271,7 @@ struct BingeMovieDetailView: View {
             isInLibrary = true
             notificationManager.show("Marked as watched")
             youEngine.library.removeAll { $0.show.id == (dbMovieId ?? tmdbId) }
+            justFinished = true
             showRatingSheet = true
         } catch {
             print("Failed to mark movie as watched: \(error)")

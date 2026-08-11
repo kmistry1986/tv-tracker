@@ -140,6 +140,9 @@ struct ImportManagementView: View {
     @State private var acceptedProposals = Set<UUID>()
     @State private var issues: [ImportIssue] = []
     @State private var error: String?
+    @State private var importedShows: [(id: Int, title: String)] = []
+    @State private var ratingTarget: (id: Int, title: String)?
+    @State private var showRatingSheet = false
 
     var body: some View {
         NavigationStack {
@@ -166,6 +169,23 @@ struct ImportManagementView: View {
         .alert("Couldn't read that", isPresented: .constant(error != nil), presenting: error) { _ in
             Button("OK") { error = nil }
         } message: { Text($0) }
+        .sheet(isPresented: $showRatingSheet) {
+            if let (id, title) = ratingTarget {
+                BingeRatingSheet(title: title,
+                                posterUrl: nil,
+                                itemId: id,
+                                isMovie: false,
+                                existingRating: nil) { _, _ in
+                    // Move to next show to rate
+                    if let nextShow = importedShows.first(where: { $0.id != id }) {
+                        ratingTarget = nextShow
+                    } else {
+                        showRatingSheet = false
+                        importedShows.removeAll()
+                    }
+                }
+            }
+        }
         .task { await loadIssues() }
     }
 
@@ -786,6 +806,7 @@ struct ImportManagementView: View {
                 if let show = chosenResult {
                     let issues = try await importShow(show, group: group, userId: userId)
                     newIssues.append(contentsOf: issues)
+                    importedShows.append((id: show.id, title: show.name))
                     showsTouched += 1
                 } else if !entry.isShow {
                     if try await importFilm(group: group, userId: userId) {
@@ -818,6 +839,13 @@ struct ImportManagementView: View {
         }
         await loadIssues()
         phase = .result
+
+        // Show rating prompts for imported shows (optional)
+        if !importedShows.isEmpty {
+            ratingTarget = importedShows.first
+            showRatingSheet = true
+        }
+
         // Call onComplete callback so search engine cache gets refreshed
         print("✅ [ImportManagementView] Import complete, calling onComplete callback")
         onComplete?()

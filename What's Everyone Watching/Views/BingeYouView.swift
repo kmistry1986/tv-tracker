@@ -306,10 +306,14 @@ struct BingeSwipeRow<Content: View>: View {
                 .gesture(
                     DragGesture(minimumDistance: 14)
                         .onChanged { value in
-                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                            // Only respond to predominantly horizontal drags
+                            // If vertical movement is significant, let scrollView handle it
+                            guard abs(value.translation.width) > abs(value.translation.height) * 1.5 else { return }
                             offset = min(width * 1.2, max(0, committed + value.translation.width))
                         }
                         .onEnded { value in
+                            // Only consider it a swipe if it was actually horizontal
+                            guard abs(value.translation.width) > abs(value.translation.height) * 1.5 else { return }
                             let open = value.translation.width > width * 0.4 || offset > width * 0.7
                             withAnimation(.snappy(duration: 0.22)) {
                                 offset = open ? width : 0
@@ -345,6 +349,7 @@ struct BingeYouView: View {
     @State private var platformFilter: String? = nil
     /// Index into `sortOptions`, which changes with the section.
     @State private var sortMode = 0
+    @State private var lastLoadTime: Date = .distantPast
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -388,9 +393,15 @@ struct BingeYouView: View {
                     Task { await engine.load() }
                 }
             }
-            .task { await engine.load() }
+            .task { await engine.load(); lastLoadTime = Date() }
             .onChange(of: tab) { _, newTab in
-                if newTab == .you { Task { await engine.load() } }
+                if newTab == .you {
+                    let timeSinceLoad = Date().timeIntervalSince(lastLoadTime)
+                    // Only reload if it's been more than 5 minutes
+                    if timeSinceLoad > 300 {
+                        Task { await engine.load(); lastLoadTime = Date() }
+                    }
+                }
             }
 
             if let message = notificationManager.message {
@@ -808,7 +819,7 @@ struct BingeYouView: View {
                                        headline: emptyHeadline,
                                        message: emptyMessage)
                 } else {
-                    ForEach(items) { item in
+                    ForEach(items, id: \.show.id) { item in
                         BingeSwipeRow(shareText: shareText(for: item)) {
                             ZStack(alignment: .trailing) {
                                 NavigationLink {
@@ -889,25 +900,16 @@ struct BingeYouView: View {
                     // The verdict, always on the same line whether set or not — so
                     // rating something doesn't reflow the list.
                     Button { ratingTarget = item } label: {
-                        Group {
-                            if let rating = item.rating, rating > 0 {
-                                HStack(spacing: 3) {
-                                    ForEach(1...5, id: \.self) { star in
-                                        Image(systemName: star <= rating ? "star.fill" : "star")
-                                            .font(.system(size: 13))
-                                            .foregroundStyle(star <= rating ? BingeTheme.ink : BingeTheme.inkFaint)
-                                    }
-                                    Spacer(minLength: 0)
-                                }
-                            } else {
-                                HStack {
-                                    Text("Rate it").bingeLabel(10).foregroundStyle(BingeTheme.accent)
-                                    Spacer(minLength: 0)
-                                }
+                        if let rating = item.rating, rating > 0 {
+                            ratingStars(rating)
+                        } else {
+                            HStack {
+                                Text("Rate it").bingeLabel(10).foregroundStyle(BingeTheme.accent)
+                                Spacer(minLength: 0)
                             }
+                            .frame(height: 18)
+                            .contentShape(Rectangle())
                         }
-                        .frame(height: 18)
-                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel((item.rating ?? 0) > 0
@@ -927,6 +929,19 @@ struct BingeYouView: View {
             Spacer(minLength: 24)
         }
         .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 16)
+    }
+
+    private func ratingStars(_ rating: Int) -> some View {
+        HStack(spacing: 3) {
+            ForEach(1...5, id: \.self) { star in
+                Image(systemName: star <= rating ? "star.fill" : "star")
+                    .font(.system(size: 13))
+                    .foregroundStyle(star <= rating ? BingeTheme.ink : BingeTheme.inkFaint)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(height: 18)
+        .contentShape(Rectangle())
     }
 
     /// Finished rows carry their own rating control inside the row, so nothing

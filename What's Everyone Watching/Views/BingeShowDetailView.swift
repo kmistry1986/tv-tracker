@@ -39,6 +39,7 @@ struct BingeShowDetailView: View {
     @State private var showSeasonSheet = false
     @State private var showRatingSheet = false
     @State private var hasLoaded = false
+    @State private var justFinished = false
     @EnvironmentObject private var notificationManager: NotificationManager
     @EnvironmentObject private var youEngine: BingeYouEngine
 
@@ -133,6 +134,12 @@ struct BingeShowDetailView: View {
                              existingReview: review) { newRating, newReview in
                 rating = newRating
                 review = newReview
+            }
+        }
+        .onChange(of: showRatingSheet) { _, newValue in
+            // After rating sheet closes and we just finished the show, dismiss back to previous screen
+            if !newValue && justFinished {
+                dismiss()
             }
         }
         .onDisappear {
@@ -327,14 +334,19 @@ struct BingeShowDetailView: View {
                 HStack(spacing: 0) {
                     ForEach(seasons, id: \.self) { s in
                         Button { selectedSeason = s } label: {
-                            Text("S\(s)").bingeLabel(11)
-                                .frame(minWidth: 54, minHeight: 44)
-                                .foregroundStyle(selectedSeason == s ? BingeTheme.ground : BingeTheme.inkMuted)
-                                .background(selectedSeason == s ? BingeTheme.ink : BingeTheme.ground)
-                                .overlay(alignment: .trailing) { BingeVRule() }
-                                .contentShape(Rectangle())
+                            VStack(spacing: 0) {
+                                Text("S\(s)").bingeLabel(11)
+                                    .frame(minWidth: 54, maxHeight: .infinity)
+                                    .foregroundStyle(selectedSeason == s ? BingeTheme.ground : BingeTheme.inkMuted)
+                                seasonBar(s)
+                            }
+                            .frame(minHeight: 44)
+                            .background(selectedSeason == s ? BingeTheme.ink : BingeTheme.ground)
+                            .overlay(alignment: .trailing) { BingeVRule(onDark: selectedSeason == s) }
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(seasonAccessibility(s))
                         // Mark a season without leaving the one you're on.
                         .contextMenu {
                             Button(seasonComplete(s) ? "Unmark season \(s)" : "Mark season \(s) watched") {
@@ -367,6 +379,39 @@ struct BingeShowDetailView: View {
     private func seasonComplete(_ s: Int) -> Bool {
         let eps = episodesBySeason[s] ?? []
         return !eps.isEmpty && eps.allSatisfy { watchedTmdbIds.contains($0.id) }
+    }
+
+    /// 27a: a 3pt bar filled to the fraction watched. Three states in one mark —
+    /// full is done, part is part-way, empty is untouched. A tick would collapse
+    /// the middle case, and "5 of 10" is the season you'd actually resume.
+    ///
+    /// It sits on the bottom edge rather than restyling the cell, because fill
+    /// already means "selected" here — two meanings in one channel is neither.
+    @ViewBuilder
+    private func seasonBar(_ s: Int) -> some View {
+        let eps = episodesBySeason[s] ?? []
+        let done = eps.filter { watchedTmdbIds.contains($0.id) }.count
+        let onDark = selectedSeason == s
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Rectangle().fill(onDark ? BingeTheme.inkMuted : BingeTheme.hairline)
+                if done > 0 {
+                    Rectangle()
+                        .fill(onDark ? BingeTheme.ground : BingeTheme.ink)
+                        .frame(width: max(2, geo.size.width * (Double(done) / Double(max(eps.count, 1)))))
+                }
+            }
+        }
+        .frame(height: 3)
+    }
+
+    private func seasonAccessibility(_ s: Int) -> String {
+        let eps = episodesBySeason[s] ?? []
+        guard !eps.isEmpty else { return "Season \(s)" }
+        let done = eps.filter { watchedTmdbIds.contains($0.id) }.count
+        if done == 0 { return "Season \(s), not started" }
+        if done == eps.count { return "Season \(s), all \(eps.count) watched" }
+        return "Season \(s), \(done) of \(eps.count) watched"
     }
 
     private var seasonHeader: some View {
@@ -696,7 +741,10 @@ struct BingeShowDetailView: View {
 
         isWorking = false
 
-        if rating == nil { showRatingSheet = true }
+        if rating == nil {
+            justFinished = true
+            showRatingSheet = true
+        }
     }
 
     private func setAllSeasons(watched on: Bool) async {

@@ -629,11 +629,11 @@ struct BingeSearchView: View {
         } else {
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(engine.people) { person in
+                    ForEach(engine.people, id: \.id) { person in
                         personRow(person)
                         BingeRule()
                     }
-                    ForEach(engine.results) { result in
+                    ForEach(engine.results, id: \.tmdbId) { result in
                         resultRow(result)
                         BingeRule()
                     }
@@ -681,7 +681,11 @@ struct BingeSearchView: View {
             actions(result)
         }
         .padding(.horizontal, BingeTheme.gutter).padding(.vertical, 12)
-        .task { await engine.loadPlatform(for: result) }
+        .task(id: result.tmdbId) {
+            // Load platforms in background, but don't fire while scrolling rapidly
+            try? await Task.sleep(nanoseconds: 100_000_000) // 100ms delay
+            await engine.loadPlatform(for: result)
+        }
     }
 
     /// Two mutually exclusive sections. Tap the one you're in to leave it.
