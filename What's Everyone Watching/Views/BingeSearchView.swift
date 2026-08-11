@@ -645,6 +645,9 @@ struct BingeSearchView: View {
                 }
             }
             .scrollDismissesKeyboard(.immediately)
+            .refreshable {
+                await engine.refreshLibraryState()
+            }
         }
     }
 
